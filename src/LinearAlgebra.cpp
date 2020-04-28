@@ -7,28 +7,28 @@ namespace {
     constexpr float epsilon = 1e-6f;
 }
 
-constexpr Vec::Vec(float _x, float _y, float _z) noexcept
+Vec::Vec(float _x, float _y, float _z) noexcept
     : x(_x)
     , y(_y)
     , z(_z) {
     
 }
 
-constexpr float Vec::norm() const noexcept {
+float Vec::norm() const noexcept {
     return std::sqrt(normSquared());
 }
 
-constexpr float Vec::normSquared() const noexcept {
+float Vec::normSquared() const noexcept {
     return x * x + y * y + z * z;
 }
 
-constexpr Vec Vec::unit() const noexcept {
+Vec Vec::unit() const noexcept {
     const auto l = norm();
     assert(l >= epsilon);
     return Vec(x / l, y / l, z / l);
 }
 
-constexpr Pos::Pos(float _x, float _y, float _z) noexcept
+Pos::Pos(float _x, float _y, float _z) noexcept
     : x(_x)
     , y(_y)
     , z(_z) {
@@ -85,7 +85,7 @@ Linear Linear::Rotation(Vec u, float a) noexcept {
     );
 }
 
-constexpr Linear::Linear() noexcept
+Linear::Linear() noexcept
     : m_data({
         1.0f, 0.0f, 0.0f,
         0.0f, 1.0f, 0.0f,
@@ -94,7 +94,7 @@ constexpr Linear::Linear() noexcept
 
 }
 
-constexpr Linear::Linear(Vec v1, Vec v2, Vec v3) noexcept
+Linear::Linear(Vec v1, Vec v2, Vec v3) noexcept
     : m_data({
         v1.x, v2.x, v3.x,
         v1.y, v2.y, v3.y,
@@ -103,7 +103,7 @@ constexpr Linear::Linear(Vec v1, Vec v2, Vec v3) noexcept
 
 }
 
-constexpr Linear::Linear(float a, float b, float c, float d, float e, float f, float g, float h, float i) noexcept 
+Linear::Linear(float a, float b, float c, float d, float e, float f, float g, float h, float i) noexcept 
     : m_data({
         a, b, c,
         d, e, f,
@@ -111,57 +111,57 @@ constexpr Linear::Linear(float a, float b, float c, float d, float e, float f, f
     }) {
 }
 
-constexpr Vec Linear::row(int i) const noexcept {
+Vec Linear::row(int i) const noexcept {
     assert(i <= 3);
     const auto& self = *this;
     return Vec(self(i, 0), self(i, 1), self(i, 2));
 }
 
-constexpr Vec Linear::column(int i) const noexcept {
+Vec Linear::column(int i) const noexcept {
     assert(i <= 3);
     const auto& self = *this;
     return Vec(self(0, i), self(1, i), self(2, i));
 }
 
-constexpr float Linear::operator[](int idx) const noexcept {
+float Linear::operator[](int idx) const noexcept {
     assert(idx <= 9);
     return m_data[idx];
 }
 
-constexpr float& Linear::operator[](int idx) noexcept {
+float& Linear::operator[](int idx) noexcept {
     assert(idx <= 9);
     return m_data[idx];
 }
 
-constexpr float Linear::operator()(int i, int j) const noexcept {
+float Linear::operator()(int i, int j) const noexcept {
     assert(i <= 3);
     assert(j <= 3);
     return m_data[3 * j + i];
 }
 
-constexpr float& Linear::operator()(int i, int j) noexcept {
+float& Linear::operator()(int i, int j) noexcept {
     assert(i <= 3);
     assert(j <= 3);
     return m_data[3 * j + i];
 }
 
-constexpr Linear Linear::transpose() const noexcept {
+Linear Linear::transpose() const noexcept {
     const auto& [a, b, c, d, e, f, g, h, i] = m_data;
     return Linear(a, d, g, b, e, h, c, f, i);
 }
 
-constexpr float Linear::determinant() const noexcept {
+float Linear::determinant() const noexcept {
     const auto& [a, b, c, d, e, f, g, h, i] = m_data;
     return (a * e * i) + (b * f * g) + (c * d * h)
         - (c * e * g) - (b * d * i) - (a * f * h);
 }
 
-constexpr std::optional<Linear> Linear::inverse() const noexcept {
+std::optional<Linear> Linear::inverse() const noexcept {
     // https://en.wikipedia.org/wiki/Invertible_matrix#Inversion_of_3_%C3%97_3_matrices
 
     const auto det = determinant();
 
-    if (std::abs(det) < epsilon) {
+    if (det < epsilon) {
         return std::nullopt;
     }
 
@@ -180,61 +180,61 @@ constexpr std::optional<Linear> Linear::inverse() const noexcept {
     return Linear(A, D, G, B, E, H, C, F, I) / det;
 }
 
-constexpr Affine::Affine(Linear _linear, Vec _translation) noexcept 
+Affine::Affine(Linear _linear, Vec _translation) noexcept 
     : linear(_linear)
     , translation(_translation) {
 }
 
-constexpr Vec operator-(const Vec& v) noexcept {
+Vec operator-(const Vec& v) noexcept {
     return Vec(-v.x, -v.y, -v.z);
 }
 
-constexpr Vec operator*(const Vec& v, float t) noexcept {
+Vec operator*(const Vec& v, float t) noexcept {
     return Vec(v.x * t, v.y * t, v.z * t);
 }
 
-constexpr Vec operator*(float t, Vec& v) noexcept {
+Vec operator*(float t, const Vec& v) noexcept {
     return v * t;
 }
 
-constexpr Vec operator/(const Vec& v, float t) noexcept {
+Vec operator/(const Vec& v, float t) noexcept {
     assert(std::abs(t) > epsilon);
     return v * (1.0f / t);
 }
 
-constexpr Vec operator+(const Vec& u, const Vec& v) noexcept {
+Vec operator+(const Vec& u, const Vec& v) noexcept {
     return Vec(u.x + v.x, u.y + v.y, u.z + v.z);
 }
 
-constexpr Vec operator-(const Vec& u, const Vec& v) noexcept {
+Vec operator-(const Vec& u, const Vec& v) noexcept {
     return Vec(u.x - v.x, u.y - v.y, u.z - v.z);
 }
 
-constexpr Pos operator+(const Pos& p, const Vec& v) noexcept {
+Pos operator+(const Pos& p, const Vec& v) noexcept {
     return Pos(p.x + v.x, p.y + v.y, p.z + v.z);
 }
 
-constexpr Pos operator+(const Vec& v, const Pos& p) noexcept {
+Pos operator+(const Vec& v, const Pos& p) noexcept {
     return p + v;
 }
 
-constexpr Pos operator-(const Pos& p, const Vec& v) noexcept {
+Pos operator-(const Pos& p, const Vec& v) noexcept {
     return Pos(p.x - v.x, p.y - v.y, p.z - v.z);
 }
 
-constexpr Vec operator-(const Pos& p, const Pos& q) noexcept {
+Vec operator-(const Pos& p, const Pos& q) noexcept {
     return Vec(p.x - q.x, p.y - q.y, p.z - q.z);
 }
 
-constexpr float operator*(const Vec& u, const Vec& v) noexcept {
+float operator*(const Vec& u, const Vec& v) noexcept {
     return u.x * v.x + u.y * v.y + u.z * v.z;
 }
 
-constexpr Vec operator^(const Vec& u, const Vec& v) noexcept {
+Vec operator^(const Vec& u, const Vec& v) noexcept {
     return Vec(u.y * v.z - u.z * v.y, u.z * v.x - u.x * v.z, u.x * v.y - u.y * v.x);
 }
 
-constexpr Linear operator-(const Linear& A) noexcept {
+Linear operator-(const Linear& A) noexcept {
     return Linear(
         -A[0],
         -A[1],
@@ -248,7 +248,7 @@ constexpr Linear operator-(const Linear& A) noexcept {
     );
 }
 
-constexpr Linear operator+(const Linear& A, const Linear& B) noexcept {
+Linear operator+(const Linear& A, const Linear& B) noexcept {
     return Linear(
         A[0] + B[0],
         A[1] + B[1],
@@ -262,7 +262,7 @@ constexpr Linear operator+(const Linear& A, const Linear& B) noexcept {
     );
 }
 
-constexpr Linear operator-(const Linear& A, const Linear& B) noexcept {
+Linear operator-(const Linear& A, const Linear& B) noexcept {
     return Linear(
         A[0] - B[0],
         A[1] - B[1],
@@ -276,7 +276,7 @@ constexpr Linear operator-(const Linear& A, const Linear& B) noexcept {
     );
 }
 
-constexpr Linear operator*(const Linear& A, float t) noexcept {
+Linear operator*(const Linear& A, float t) noexcept {
     return Linear(
         t * A[0],
         t * A[1],
@@ -290,20 +290,25 @@ constexpr Linear operator*(const Linear& A, float t) noexcept {
     );
 }
 
-constexpr Linear operator*(float t, const Linear& A) noexcept {
+Linear operator*(float t, const Linear& A) noexcept {
     return A * t;
 }
 
-constexpr Linear operator/(const Linear& A, float t) noexcept {
+Linear operator/(const Linear& A, float t) noexcept {
     assert(std::abs(t) > epsilon);
     return A * (1.0f / t);
 }
 
-constexpr Vec operator*(const Linear& A, const Vec& v) noexcept {
+Vec operator*(const Linear& A, const Vec& v) noexcept {
     return A.column(0) * v.x + A.column(1) * v.y + A.column(2) * v.z;
 }
 
-constexpr Linear operator*(const Linear& A, const Linear& B) noexcept {
+Pos operator*(const Linear& A, const Pos& p) noexcept {
+    const auto v = A * Vec(p.x, p.y, p.z);
+    return Pos(v.x, v.y, v.z);
+}
+
+Linear operator*(const Linear& A, const Linear& B) noexcept {
     return Linear(
         A.row(0) * B.column(0), A.row(0) * B.column(1), A.row(0) * B.column(2),
         A.row(1) * B.column(0), A.row(1) * B.column(1), A.row(1) * B.column(2),
@@ -311,11 +316,11 @@ constexpr Linear operator*(const Linear& A, const Linear& B) noexcept {
     );
 }
 
-constexpr Vec operator*(const Affine& T, const Vec& v) {
+Vec operator*(const Affine& T, const Vec& v) {
     return T.linear * v;
 }
 
-constexpr Pos operator*(const Affine& T, const Pos& p) {
+Pos operator*(const Affine& T, const Pos& p) {
     return T.linear * p + T.translation;
 }
 

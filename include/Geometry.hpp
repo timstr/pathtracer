@@ -9,11 +9,11 @@ public:
     Pos b;
     Pos c;
 
-    constexpr Triangle(Pos _a, Pos _b, Pos _c) noexcept;
+    Triangle(Pos _a, Pos _b, Pos _c) noexcept;
 
-    constexpr Vec normal() const noexcept;
+    Vec normal() const noexcept;
 
-    constexpr float area() const noexcept;
+    float area() const noexcept;
 };
 
 class Sphere {
@@ -21,11 +21,13 @@ public:
     Pos center;
     float radius;
 
-    constexpr Sphere(Pos _center, float _radius) noexcept;
+    Sphere(Pos _center, float _radius) noexcept;
 
-    constexpr float surfaceArea() const noexcept;
+    float surfaceArea() const noexcept;
 
-    constexpr float volume() const noexcept;
+    float volume() const noexcept;
+
+    Vec normal(Pos p) const noexcept;
 };
 
 class AxisAlignedBox {

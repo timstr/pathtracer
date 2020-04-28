@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.10.0)
 
 project(pathtracer CXX)
 
+set(CMAKE_CXX_STANDARD 17)
 
 set(SFML_STATIC_LIBRARIES TRUE)
 find_package(SFML 2.4 COMPONENTS system window graphics audio main REQUIRED)
@@ -24,9 +25,16 @@ set(pathtracer_srcs
     src/RandomNumberGenerator.cpp
 )
 
-add_executable(pathtracer PathTracerDemo.cpp ${pathtracer_headers} ${pathtracer_srcs})
+add_library(pathtracer STATIC ${pathtracer_headers} ${pathtracer_srcs})
 
-target_link_libraries(pathtracer
+target_include_directories(pathtracer
+	PUBLIC include
+)
+
+add_executable(pathtracerdemo PathTracerDemo.cpp)
+
+target_link_libraries(pathtracerdemo
+    PUBLIC pathtracer
 	PUBLIC sfml-system
 	PUBLIC sfml-window
 	PUBLIC sfml-graphics
@@ -34,13 +42,7 @@ target_link_libraries(pathtracer
 	PUBLIC sfml-main
 )
 
-target_include_directories(pathtracer
-	PUBLIC include
-)
-
-set_property(TARGET pathtracer PROPERTY CXX_STANDARD 17)
-
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT pathtracer)
+set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT pathtracerdemo)
 
 
 if(MSVC)

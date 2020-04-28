@@ -10,13 +10,13 @@ public:
     float y;
     float z;
 
-    constexpr Vec(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
+    Vec(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
 
-    constexpr float norm() const noexcept;
+    float norm() const noexcept;
 
-    constexpr float normSquared() const noexcept;
+    float normSquared() const noexcept;
 
-    constexpr Vec unit() const noexcept;
+    Vec unit() const noexcept;
 };
 
 class Pos {
@@ -25,7 +25,7 @@ public:
     float y;
     float z;
 
-    constexpr Pos(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
+    Pos(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
 };
 
 class Linear {
@@ -44,26 +44,26 @@ public:
 
     static Linear Scale(float k);
 
-    constexpr Linear() noexcept;
+    Linear() noexcept;
 
-    constexpr Linear(Vec column1, Vec column2, Vec column3) noexcept;
+    Linear(Vec column1, Vec column2, Vec column3) noexcept;
 
-    constexpr Linear(float a, float b, float c, float d, float e, float f, float g, float h, float i) noexcept;
+    Linear(float a, float b, float c, float d, float e, float f, float g, float h, float i) noexcept;
 
-    constexpr Vec row(int i) const noexcept;
-    constexpr Vec column(int i) const noexcept;
+    Vec row(int i) const noexcept;
+    Vec column(int i) const noexcept;
 
-    constexpr float operator[](int idx) const noexcept;
-    constexpr float& operator[](int idx) noexcept;
+    float operator[](int idx) const noexcept;
+    float& operator[](int idx) noexcept;
 
-    constexpr float operator()(int i, int j) const noexcept;
-    constexpr float& operator()(int i, int j) noexcept;
+    float operator()(int i, int j) const noexcept;
+    float& operator()(int i, int j) noexcept;
 
-    constexpr Linear transpose() const noexcept;
+    Linear transpose() const noexcept;
 
-    constexpr float determinant() const noexcept;
+    float determinant() const noexcept;
 
-    constexpr std::optional<Linear> inverse() const noexcept;
+    std::optional<Linear> inverse() const noexcept;
 
 private:
     std::array<float, 9> m_data;
@@ -71,64 +71,67 @@ private:
 
 class Affine {
 public:
-    constexpr Affine(Linear _linear = {}, Vec _translation = {}) noexcept;
+    Affine(Linear _linear = {}, Vec _translation = {}) noexcept;
 
     Linear linear;
     Vec translation;
 };
 
 // vector negation
-constexpr Vec operator-(const Vec& v) noexcept;
+Vec operator-(const Vec& v) noexcept;
 
 // vector-scalar multiplication
-constexpr Vec operator*(const Vec& v, float t) noexcept;
-constexpr Vec operator*(float t, Vec& v) noexcept;
+Vec operator*(const Vec& v, float t) noexcept;
+Vec operator*(float t, const Vec& v) noexcept;
 
 // vector-scalar division
-constexpr Vec operator/(const Vec& v, float t) noexcept;
+Vec operator/(const Vec& v, float t) noexcept;
 
 // vector-vector addition and subtraction
-constexpr Vec operator+(const Vec& u, const Vec& v) noexcept;
-constexpr Vec operator-(const Vec& u, const Vec& v) noexcept;
+Vec operator+(const Vec& u, const Vec& v) noexcept;
+Vec operator-(const Vec& u, const Vec& v) noexcept;
 
 // vector-point addition
-constexpr Pos operator+(const Pos& p, const Vec& v) noexcept;
-constexpr Pos operator+(const Vec& v, const Pos& p) noexcept;
+Pos operator+(const Pos& p, const Vec& v) noexcept;
+Pos operator+(const Vec& v, const Pos& p) noexcept;
 
 // vector-point subtraction
-constexpr Pos operator-(const Pos& p, const Vec& v) noexcept;
+Pos operator-(const Pos& p, const Vec& v) noexcept;
 
 // position-position subtraction
-constexpr Vec operator-(const Pos& p, const Pos& q) noexcept;
+Vec operator-(const Pos& p, const Pos& q) noexcept;
 
 // vector dot product
-constexpr float operator*(const Vec& u, const Vec& v) noexcept;
+float operator*(const Vec& u, const Vec& v) noexcept;
 
 // vector cross product
-constexpr Vec operator^(const Vec& u, const Vec& v) noexcept;
+Vec operator^(const Vec& u, const Vec& v) noexcept;
 
 // linear negation
-constexpr Linear operator-(const Linear& A) noexcept;
+Linear operator-(const Linear& A) noexcept;
 
 // linear-linear addition and subtraction
-constexpr Linear operator+(const Linear& A, const Linear& B) noexcept;
-constexpr Linear operator-(const Linear& A, const Linear& B) noexcept;
+Linear operator+(const Linear& A, const Linear& B) noexcept;
+Linear operator-(const Linear& A, const Linear& B) noexcept;
 
 // linear-scalar multiplication
-constexpr Linear operator*(const Linear& A, float t) noexcept;
-constexpr Linear operator*(float t, const Linear& A) noexcept;
+Linear operator*(const Linear& A, float t) noexcept;
+Linear operator*(float t, const Linear& A) noexcept;
 
 // linear-scalar division
-constexpr Linear operator/(const Linear& A, float t) noexcept;
+Linear operator/(const Linear& A, float t) noexcept;
 
 // linear-vector multiplication
-constexpr Vec operator*(const Linear& A, const Vec& v) noexcept;
+Vec operator*(const Linear& A, const Vec& v) noexcept;
+
+// linear-point multiplication
+Pos operator*(const Linear& A, const Pos& v) noexcept;
 
 // linear-linear multiplication
-constexpr Linear operator*(const Linear& A, const Linear& B) noexcept;
+Linear operator*(const Linear& A, const Linear& B) noexcept;
 
 // affine-vector multiplication
-constexpr Vec operator*(const Affine& T, const Vec& v);
+Vec operator*(const Affine& T, const Vec& v);
 
 // affine-point multiplication
-constexpr Pos operator*(const Affine& T, const Pos& p);
+Pos operator*(const Affine& T, const Pos& p);

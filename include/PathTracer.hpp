@@ -14,6 +14,13 @@ public:
     float b;
 };
 
+class ColorBounce {
+public:
+    Color emitted;
+    Color attenuation;
+    Ray ray;
+};
+
 class Object {
 public:
     virtual ~Object() noexcept = default;
@@ -37,15 +44,16 @@ public:
     // This should be general enough to account for glossy surfaces, geometric primitives,
     // non-trivial geometric objects, refractive objects, partially transparent objects with
     // sub-surface scattering, volumetric objects like smoke, and weird light-deflecting media
-    virtual std::tuple<Ray, Color, float> deflect(const Ray& ray) const noexcept = 0;
+    virtual ColorBounce deflect(const Ray& ray) const noexcept = 0;
 };
 
 class BasicGlossyMaterial {
 public:
     float diffuseness;
+    Color reflectedColor;
     Color emittedRadiance;
 
-    std::tuple<Ray, Color, float> deflect(const Vec& inbound, const Vec& normal) const noexcept;
+    ColorBounce deflect(const Vec& inbound, const Vec& normal) const noexcept;
 };
 
 class TriangleObject : public Object {
@@ -53,9 +61,11 @@ public:
     Triangle geometry;
     BasicGlossyMaterial material;
 
+    TriangleObject(Triangle _geometry, BasicGlossyMaterial _material = {});
+
     std::optional<float> hit(const Ray& ray) const noexcept override;
 
-    std::tuple<Ray, Color, float> deflect(const Ray& ray) const noexcept override;
+    ColorBounce deflect(const Ray& ray) const noexcept override;
 };
 
 class SphereObject : public Object {
@@ -63,13 +73,17 @@ public:
     Sphere geometry;
     BasicGlossyMaterial material;
 
+    SphereObject(Sphere _geometry, BasicGlossyMaterial _material = {}) noexcept;
+
     std::optional<float> hit(const Ray& ray) const noexcept override;
 
-    std::tuple<Ray, Color, float> deflect(const Ray& ray) const noexcept override;
+    ColorBounce deflect(const Ray& ray) const noexcept override;
 };
 
 class Scene {
 public:
+    void addObject(std::unique_ptr<Object>) noexcept;
+
     Color trace(Ray ray, std::size_t depth) const noexcept;
 
 private:
@@ -78,20 +92,19 @@ private:
 
 class Camera {
 public:
-    Affine transform;
-
     virtual ~Camera() noexcept = default;
 
-    virtual Vec getViewDirection(float screenX, float screenY) const noexcept = 0;
+    virtual Ray getViewRay(float screenX, float screenY) const noexcept = 0;
 };
 
 class OrthographicCamera : public Camera {
 public:
+    Affine transform;
     float aspectRatio;
 
-    constexpr OrthographicCamera(float _aspectRatio = 1.0f) noexcept;
+    OrthographicCamera(Affine _transform, float _aspectRatio) noexcept;
 
-    Vec getViewDirection(float screenX, float screenY) const noexcept override final;
+    Ray getViewRay(float screenX, float screenY) const noexcept override final;
 };
 
 class Image {
@@ -101,8 +114,8 @@ public:
     std::size_t width() const noexcept;
     std::size_t height() const noexcept;
 
-    float operator()(std::size_t x, std::size_t y) const noexcept;
-    float& operator()(std::size_t x, std::size_t y) noexcept;
+    const Color& operator()(std::size_t x, std::size_t y) const noexcept;
+    Color& operator()(std::size_t x, std::size_t y) noexcept;
 
 private:
     const std::size_t m_width;

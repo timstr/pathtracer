@@ -6,33 +6,37 @@ namespace {
     constexpr float epsilon = 1e-6f;
 }
 
-constexpr Triangle::Triangle(Pos _a, Pos _b, Pos _c) noexcept
+Triangle::Triangle(Pos _a, Pos _b, Pos _c) noexcept
     : a(_a)
     , b(_b)
     , c(_c) {
 
 }
 
-constexpr Vec Triangle::normal() const noexcept {
+Vec Triangle::normal() const noexcept {
     return ((b - a) ^ (c - a)).unit();
 }
 
-constexpr float Triangle::area() const noexcept {
+float Triangle::area() const noexcept {
     return ((b - a) ^ (c - a)).norm() * 0.5f;
 }
 
-constexpr Sphere::Sphere(Pos _center, float _radius) noexcept
+Sphere::Sphere(Pos _center, float _radius) noexcept
     : center(_center)
     , radius(_radius) {
 
 }
 
-constexpr float Sphere::surfaceArea() const noexcept {
+float Sphere::surfaceArea() const noexcept {
     return 4.0f * pi * radius * radius;
 }
 
-constexpr float Sphere::volume() const noexcept {
+float Sphere::volume() const noexcept {
     return (4.0f / 3.0f) * pi * radius * radius * radius;
+}
+
+Vec Sphere::normal(Pos p) const noexcept {
+    return (p - center).unit();
 }
 
 std::optional<float> intersect(const Ray& ray, const Triangle& triangle) noexcept {
