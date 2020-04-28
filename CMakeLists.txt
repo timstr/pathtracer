@@ -11,11 +11,17 @@ if (NOT SFML_FOUND)
 endif()
 
 set(pathtracer_headers
+    include/LinearAlgebra.hpp
+    include/Geometry.hpp
     include/PathTracer.hpp
+    include/RandomNumberGenerator.hpp
 )
 
 set(pathtracer_srcs
+    src/LinearAlgebra.cpp
+    src/Geometry.cpp
     src/PathTracer.cpp
+    src/RandomNumberGenerator.cpp
 )
 
 add_executable(pathtracer PathTracerDemo.cpp ${pathtracer_headers} ${pathtracer_srcs})
@@ -26,6 +32,10 @@ target_link_libraries(pathtracer
 	PUBLIC sfml-graphics
 	PUBLIC sfml-audio
 	PUBLIC sfml-main
+)
+
+target_include_directories(pathtracer
+	PUBLIC include
 )
 
 set_property(TARGET pathtracer PROPERTY CXX_STANDARD 17)

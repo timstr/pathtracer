@@ -1,61 +1,10 @@
 #pragma once
 
+#include <Geometry.hpp>
+
+#include <memory>
 #include <optional>
-
-class Vec {
-public:
-    float x;
-    float y;
-    float z;
-
-    constexpr Vec(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
-};
-
-class Pos {
-public:
-    float x;
-    float y;
-    float z;
-
-    constexpr Pos(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
-};
-
-class Ray {
-public:
-    Vec dir;
-    Pos pos;
-};
-
-constexpr Vec operator*(const Vec& v, float a) noexcept;
-constexpr Vec operator*(float a, Vec& v) noexcept;
-
-constexpr Vec operator+(const Vec& u, const Vec& v) noexcept;
-constexpr Vec operator-(const Vec& u, const Vec& v) noexcept;
-
-constexpr Pos operator+(const Pos& p, const Vec& v) noexcept;
-constexpr Pos operator+(const Vec& v, const Pos& p) noexcept;
-
-constexpr Pos operator-(const Pos& p, const Vec& v) noexcept;
-constexpr Pos operator-(const Vec& v, const Pos& p) noexcept;
-
-constexpr Vec operator-(const Pos& p, const Pos& q) noexcept;
-
-constexpr float operator*(const Vec& u, const Vec& v) noexcept;
-
-constexpr Vec operator^(const Vec& u, const Vec& v) noexcept;
-
-class Triangle {
-public:
-    Pos a;
-    Pos b;
-    Pos c;
-};
-
-class Sphere {
-public:
-    Pos center;
-    float radius;
-};
+#include <vector>
 
 
 class Color {
@@ -69,25 +18,112 @@ class Object {
 public:
     virtual ~Object() noexcept = default;
 
-    /**
-     * If the given ray intersects the object, a new ray is returned whose
-     * position is the nearest positive point of intersection, and whose
-     * direction has been bounced according to the object's surface and material
-     */
-    virtual std::optional<Ray> bounceRay(const Ray& ray, Color& luminance) const noexcept;
+    // If the object hits the ray, returns the t-value along the ray
+    // at which the object hits. The point of collision is the ray's
+    // position plus t times the ray's direction. This function need
+    // not be deterministic, and may return randomly distributed values
+    // to allow effects like subsurface scattering, volumetric rendering,
+    // and other creative noisy effects
+    virtual std::optional<float> hit(const Ray& ray) const noexcept = 0;
+
+    // Given a ray whose position is given by a previous call to hit (see above),
+    // returns:
+    // - Ray   : The newly deflected light ray, which may be reflected or refracted,
+    //           located at the point of collision and pointing in the new ray direction
+    // - Color : The emitted radiance at the point of collision in the direction of the
+    //           incoming ray
+    // - float : The attenuation factor of the radiance from the next ray, computed according
+    //           to the bidirectional reflection distribution function
+    // This should be general enough to account for glossy surfaces, geometric primitives,
+    // non-trivial geometric objects, refractive objects, partially transparent objects with
+    // sub-surface scattering, volumetric objects like smoke, and weird light-deflecting media
+    virtual std::tuple<Ray, Color, float> deflect(const Ray& ray) const noexcept = 0;
 };
 
 class BasicGlossyMaterial {
 public:
-    float diffuseReflection;
-    float specularReflection;
-    Color color;
+    float diffuseness;
+    Color emittedRadiance;
+
+    std::tuple<Ray, Color, float> deflect(const Vec& inbound, const Vec& normal) const noexcept;
 };
 
 class TriangleObject : public Object {
-    // TODO
+public:
+    Triangle geometry;
+    BasicGlossyMaterial material;
+
+    std::optional<float> hit(const Ray& ray) const noexcept override;
+
+    std::tuple<Ray, Color, float> deflect(const Ray& ray) const noexcept override;
 };
 
 class SphereObject : public Object {
-    // TODO
+public:
+    Sphere geometry;
+    BasicGlossyMaterial material;
+
+    std::optional<float> hit(const Ray& ray) const noexcept override;
+
+    std::tuple<Ray, Color, float> deflect(const Ray& ray) const noexcept override;
+};
+
+class Scene {
+public:
+    Color trace(Ray ray, std::size_t depth) const noexcept;
+
+private:
+    std::vector<std::unique_ptr<Object>> m_objects;
+};
+
+class Camera {
+public:
+    Affine transform;
+
+    virtual ~Camera() noexcept = default;
+
+    virtual Vec getViewDirection(float screenX, float screenY) const noexcept = 0;
+};
+
+class OrthographicCamera : public Camera {
+public:
+    float aspectRatio;
+
+    constexpr OrthographicCamera(float _aspectRatio = 1.0f) noexcept;
+
+    Vec getViewDirection(float screenX, float screenY) const noexcept override final;
+};
+
+class Image {
+public:
+    Image(std::size_t width, std::size_t height);
+
+    std::size_t width() const noexcept;
+    std::size_t height() const noexcept;
+
+    float operator()(std::size_t x, std::size_t y) const noexcept;
+    float& operator()(std::size_t x, std::size_t y) noexcept;
+
+private:
+    const std::size_t m_width;
+    const std::size_t m_height;
+    std::vector<Color> m_data;
+};
+
+class Renderer {
+public:
+
+    Image render(const Scene&, const Camera&, std::size_t width, std::size_t height, std::size_t samplesPerPixel) const;
+};
+
+class ToneMapper {
+public:
+    virtual ~ToneMapper() noexcept = default;
+
+    virtual Image operator()(const Image&) const noexcept = 0;
+};
+
+class ReinhardToneMapper : public ToneMapper {
+public:
+    virtual Image operator()(const Image&) const noexcept override final;
 };
