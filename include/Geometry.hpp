@@ -39,6 +39,9 @@ public:
 
 class Ray {
 public:
+    Ray() noexcept = default;
+    Ray(Vec _direction, Pos _position) noexcept;
+
     Vec dir;
     Pos pos;
 };

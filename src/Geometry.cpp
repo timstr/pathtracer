@@ -67,6 +67,7 @@ std::optional<float> intersect(const Ray& ray, const Triangle& triangle) noexcep
 }
 
 std::optional<float> intersect(const Ray& ray, const Sphere& sphere) noexcept {
+    // https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
     const auto a = ray.dir.normSquared();
     const auto b = 2.0f * (ray.dir * (ray.pos - sphere.center));
     const auto c = (ray.pos - sphere.center).normSquared() - (sphere.radius * sphere.radius);
@@ -75,8 +76,9 @@ std::optional<float> intersect(const Ray& ray, const Sphere& sphere) noexcept {
         return std::nullopt;
     }
     const auto sqrtDisc = std::sqrt(disc);
-    const auto t0 = (-b - sqrtDisc) / (2.0f * a * c);
-    const auto t1 = (-b + sqrtDisc) / (2.0f * a * c);
+    const auto t0 = (-b - sqrtDisc) / (2.0f * a);
+    const auto t1 = (-b + sqrtDisc) / (2.0f * a);
+    const auto epsilon = 1e-3f;
     if (t0 > epsilon) {
         if (t1 > epsilon) {
             return std::min(t0, t1);
@@ -109,4 +111,9 @@ Vec randomHemisphereVectorUniform(Vec normal) noexcept {
         Vec v2 = v1 ^ normal;
         return x * v1 + y * v2 + z * normal;
     }
+}
+
+Ray::Ray(Vec _direction, Pos _position) noexcept
+    : dir(_direction)
+    , pos(_position) {
 }

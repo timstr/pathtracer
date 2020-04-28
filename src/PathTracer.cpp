@@ -1,4 +1,5 @@
 #include <PathTracer.hpp>
+#include <RandomNumberGenerator.hpp>
 
 #include <cassert>
 
@@ -10,8 +11,8 @@ namespace {
 ColorBounce BasicGlossyMaterial::deflect(const Vec& inbound, const Vec& normal) const noexcept {
     assert(diffuseness >= 0.0f && diffuseness <= 1.0f);
     const auto diffuseBounce = randomHemisphereVectorUniform(normal);
-    const auto specularBounce = (-inbound) + (2.0f * ((inbound * normal) * normal));
-    const auto ray = specularBounce + diffuseness * (diffuseBounce - specularBounce);
+    const auto specularBounce = inbound - (2.0f * ((inbound * normal) * normal));
+    const auto ray = (specularBounce + diffuseness * (diffuseBounce - specularBounce)).unit();
     return {
         emittedRadiance,
         reflectedColor,
@@ -55,7 +56,7 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
     auto color = Color{};
     auto attenuation = Color{1.0f, 1.0f, 1.0f};
     for (std::size_t i = 0; i < depth; ++i) {
-        auto closestT = -1.0f;
+        auto closestT = std::numeric_limits<float>::max();
         const Object* hitObj = nullptr;
         for (const auto& obj : m_objects) {
             if (auto t = obj->hit(ray)) {
@@ -70,22 +71,22 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
         }
         // TODO: overload +=
         ray.pos = ray.pos + closestT * ray.dir;
-        const auto deflection = hitObj->deflect(ray);
-        assert(deflection.emitted.r >= 0.0f);
-        assert(deflection.emitted.g >= 0.0f);
-        assert(deflection.emitted.b >= 0.0f);
-        assert(deflection.attenuation.r >= 0.0f && deflection.attenuation.r <= 1.0f);
-        assert(deflection.attenuation.g >= 0.0f && deflection.attenuation.g <= 1.0f);
-        assert(deflection.attenuation.b >= 0.0f && deflection.attenuation.b <= 1.0f);
-        assert(1.0f - std::abs(deflection.ray.dir.norm()) < epsilon);
+        const auto bounce = hitObj->deflect(ray);
+        assert(bounce.emitted.r >= 0.0f);
+        assert(bounce.emitted.g >= 0.0f);
+        assert(bounce.emitted.b >= 0.0f);
+        assert(bounce.attenuation.r >= 0.0f && bounce.attenuation.r <= 1.0f);
+        assert(bounce.attenuation.g >= 0.0f && bounce.attenuation.g <= 1.0f);
+        assert(bounce.attenuation.b >= 0.0f && bounce.attenuation.b <= 1.0f);
+        assert(std::abs(1.0f - bounce.direction.norm()) < epsilon);
         // TODO: overload operators for Color
-        color.r += deflection.emitted.r * attenuation.r;
-        color.g += deflection.emitted.g * attenuation.g;
-        color.b += deflection.emitted.b * attenuation.b;
-        attenuation.r *= deflection.attenuation.r;
-        attenuation.g *= deflection.attenuation.g;
-        attenuation.b *= deflection.attenuation.b;
-        ray = deflection.ray;
+        color.r += bounce.emitted.r * attenuation.r;
+        color.g += bounce.emitted.g * attenuation.g;
+        color.b += bounce.emitted.b * attenuation.b;
+        attenuation.r *= bounce.attenuation.r;
+        attenuation.g *= bounce.attenuation.g;
+        attenuation.b *= bounce.attenuation.b;
+        ray.dir = bounce.direction;
     }
     return color;
 }
@@ -101,7 +102,8 @@ Ray OrthographicCamera::getViewRay(float screenX, float screenY) const noexcept 
     const auto y = screenY * 2.0f - 1.0f;
     const auto sp = aspectRatio > 1.0f ? Pos(x, y / aspectRatio) : Pos(x / aspectRatio, y);
     const auto pos = transform * sp;
-    const auto dir = transform * Vec(0.0f, 0.0f, 1.0f);
+    const auto dir = transform * Vec(0.02f * x, 0.02f * y, 1.0f);
+    // const auto dir = transform * Vec(0.0f, 0.0f, 1.0f);
     return { dir, pos };
 }
 
@@ -130,9 +132,7 @@ Color& Image::operator()(std::size_t x, std::size_t y) noexcept {
     return const_cast<Color&>(const_cast<const Image*>(this)->operator()(x, y));
 }
 
-Image Renderer::render(const Scene& scene, const Camera& camera, std::size_t width, std::size_t height, std::size_t samplesPerPixel) const {
-    const auto rayDepth = 10;
-
+Image Renderer::render(const Scene& scene, const Camera& camera, std::size_t width, std::size_t height, std::size_t numBounces, std::size_t samplesPerPixel) const {
     const auto maxWidth = static_cast<float>(width - 1);
     const auto maxHeight = static_cast<float>(height - 1);
     const auto sppInv = 1.0f / static_cast<float>(samplesPerPixel);
@@ -144,7 +144,7 @@ Image Renderer::render(const Scene& scene, const Camera& camera, std::size_t wid
             const auto sy = static_cast<float>(y) / maxHeight;
             auto acc = Color{};
             for (std::size_t i = 0; i < samplesPerPixel; ++i){
-                 const auto c = scene.trace(camera.getViewRay(sx, sy), rayDepth);
+                 const auto c = scene.trace(camera.getViewRay(sx, sy), numBounces);
                  // TODO: operators
                  acc.r += c.r;
                  acc.g += c.g;
@@ -160,16 +160,18 @@ Image Renderer::render(const Scene& scene, const Camera& camera, std::size_t wid
 }
 
 Image ReinhardToneMapper::operator()(const Image& img) const noexcept {
+    // TODO: this doesn't work
     auto acc = 0.0f;
     const auto w = img.width();
     const auto h = img.height();
     for (std::size_t i = 0; i < w; ++i) {
         for (std::size_t j = 0; j < h; ++j) {
             const auto& c = img(i, j);
-            acc += std::log(c.r) + std::log(c.g) + std::log(c.b);
+            const auto lum = 0.27f * c.r + 0.67f * c.b + 0.06f * c.b;
+            acc += std::log(lum);
         }
     }
-    const auto k = 0.5f * std::exp(acc / static_cast<float>(w * h * 3));
+    const auto k = 0.5f * std::exp(acc / static_cast<float>(w * h));
 
     auto ret = Image(w, h);
 

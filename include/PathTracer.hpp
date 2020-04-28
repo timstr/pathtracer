@@ -18,7 +18,7 @@ class ColorBounce {
 public:
     Color emitted;
     Color attenuation;
-    Ray ray;
+    Vec direction;
 };
 
 class Object {
@@ -126,7 +126,7 @@ private:
 class Renderer {
 public:
 
-    Image render(const Scene&, const Camera&, std::size_t width, std::size_t height, std::size_t samplesPerPixel) const;
+    Image render(const Scene&, const Camera&, std::size_t width, std::size_t height, std::size_t numBounces, std::size_t samplesPerPixel) const;
 };
 
 class ToneMapper {
