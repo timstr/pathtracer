@@ -16,6 +16,8 @@ public:
 
 class ColorBounce {
 public:
+    ColorBounce(Color _emitted, Color _attenuation, Vec _direction) noexcept;
+
     Color emitted;
     Color attenuation;
     Vec direction;
@@ -49,6 +51,8 @@ public:
 
 class BasicGlossyMaterial {
 public:
+    BasicGlossyMaterial(float diffuseNess = 0.7f, Color _reflectedColor = Color{1.0f, 1.0f, 1.0f}, Color _emittedRadiance = Color{0.0f, 0.0f, 0.0f}) noexcept;
+
     float diffuseness;
     Color reflectedColor;
     Color emittedRadiance;
@@ -97,14 +101,31 @@ public:
     virtual Ray getViewRay(float screenX, float screenY) const noexcept = 0;
 };
 
-class OrthographicCamera : public Camera {
+class PerspectiveCamera : public Camera {
 public:
-    Affine transform;
-    float aspectRatio;
+    PerspectiveCamera(Affine transform, float aspectRatio = 1.0f, float fieldOfView = 30.0f) noexcept;
 
-    OrthographicCamera(Affine _transform, float _aspectRatio) noexcept;
+    const Affine& transform() const noexcept;
+    Affine& transform() noexcept;
+    float aspectRatio() const noexcept;
+    float fieldOfView() const noexcept;
+    float focalDistance() const noexcept;
+    float focalBlurRadius() const noexcept;
+
+    void setTransform(Affine) noexcept;
+    void setAspectRatio(float) noexcept;
+    void setFieldOfView(float) noexcept;
+    void setFocalDistance(float) noexcept;
+    void setFocalBlurRadius(float) noexcept;
 
     Ray getViewRay(float screenX, float screenY) const noexcept override final;
+
+private:
+    Affine m_transform;
+    float m_aspectRatio;
+    float m_fieldOfView;
+    float m_focalDistance;
+    float m_focalBlurRadius;
 };
 
 class Image {
@@ -125,8 +146,28 @@ private:
 
 class Renderer {
 public:
+    Renderer(std::size_t width = 1024, std::size_t height = 1024) noexcept;
 
-    Image render(const Scene&, const Camera&, std::size_t width, std::size_t height, std::size_t numBounces, std::size_t samplesPerPixel) const;
+    std::size_t width() const noexcept;
+    std::size_t height() const noexcept;
+    std::size_t numBounces() const noexcept;
+    std::size_t samplesPerPixel() const noexcept;
+    std::size_t numThreads() const noexcept;
+
+    void setWidth(std::size_t) noexcept;
+    void setHeight(std::size_t) noexcept;
+    void setNumBounces(std::size_t) noexcept;
+    void setSamplesPerPixel(std::size_t) noexcept;
+    void setNumThreads(std::size_t) noexcept;
+
+    Image render(const Scene&, const Camera&) const;
+
+private:
+    std::size_t m_width;
+    std::size_t m_height;
+    std::size_t m_numBounces;
+    std::size_t m_samplesPerPixel;
+    std::size_t m_numThreads;
 };
 
 class ToneMapper {

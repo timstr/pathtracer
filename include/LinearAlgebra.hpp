@@ -71,7 +71,11 @@ private:
 
 class Affine {
 public:
-    Affine(Linear _linear = {}, Vec _translation = {}) noexcept;
+    Affine(const Linear& _linear = {}) noexcept;
+    Affine(const Linear& _linear, const Vec& _translation) noexcept;
+
+    static Affine Translation(const Vec&) noexcept;
+    static Affine Translation(float x, float y, float z) noexcept;
 
     Linear linear;
     Vec translation;
@@ -135,3 +139,9 @@ Vec operator*(const Affine& T, const Vec& v);
 
 // affine-point multiplication
 Pos operator*(const Affine& T, const Pos& p);
+
+// affine-linear multiplication
+Affine operator*(const Affine& A, const Linear& L) noexcept;
+
+// affine-affine multiplication
+Affine operator*(const Affine& A, const Affine& B) noexcept;

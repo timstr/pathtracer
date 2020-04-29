@@ -39,10 +39,14 @@ Vec Sphere::normal(Pos p) const noexcept {
     return (p - center).unit();
 }
 
+Vec bounce(const Vec& inbound, const Vec& normal) noexcept {
+    return inbound - (2.0f * ((inbound * normal) * normal));
+}
+
 std::optional<float> intersect(const Ray& ray, const Triangle& triangle) noexcept {
     // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
     const auto edge1 = triangle.b - triangle.a;
-    const auto edge2 = triangle.c - triangle.b;
+    const auto edge2 = triangle.c - triangle.a;
     const auto h = ray.dir ^ edge2;
     const auto a = edge1 * h;
     if (std::abs(a) < epsilon) {
@@ -78,21 +82,33 @@ std::optional<float> intersect(const Ray& ray, const Sphere& sphere) noexcept {
     const auto sqrtDisc = std::sqrt(disc);
     const auto t0 = (-b - sqrtDisc) / (2.0f * a);
     const auto t1 = (-b + sqrtDisc) / (2.0f * a);
-    const auto epsilon = 1e-3f;
-    if (t0 > epsilon) {
-        if (t1 > epsilon) {
+    const auto eps= 1e-3f;
+    if (t0 > eps) {
+        if (t1 > eps) {
             return std::min(t0, t1);
         }
         return t0;
     } else {
-        if (t1 > epsilon) {
+        if (t1 > eps) {
             return t1;
         }
         return std::nullopt;
     }
 }
 
-Vec randomHemisphereVectorUniform(Vec normal) noexcept {
+std::pair<float, float> randomPointInCircle() noexcept {
+    const auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+    while (true) {
+        auto x = dist(randomEngine());
+        auto y = dist(randomEngine());
+        const auto l = x * x + y * y;
+        if (l <= 1.0f) {
+            return {x, y};
+        }
+    }
+}
+
+Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
     const auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
     while (true) {
         auto x = dist(randomEngine());

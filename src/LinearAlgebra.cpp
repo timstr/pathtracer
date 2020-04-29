@@ -180,9 +180,21 @@ std::optional<Linear> Linear::inverse() const noexcept {
     return Linear(A, D, G, B, E, H, C, F, I) / det;
 }
 
-Affine::Affine(Linear _linear, Vec _translation) noexcept 
+Affine::Affine(const Linear& _linear) noexcept
+    : linear(_linear) {
+}
+
+Affine::Affine(const Linear& _linear, const Vec& _translation) noexcept
     : linear(_linear)
     , translation(_translation) {
+}
+
+Affine Affine::Translation(const Vec& t) noexcept {
+    return Affine(Linear{}, t);
+}
+
+Affine Affine::Translation(float x, float y, float z) noexcept {
+    return Translation(Vec{ x, y, z });
 }
 
 Vec operator-(const Vec& v) noexcept {
@@ -322,6 +334,14 @@ Vec operator*(const Affine& T, const Vec& v) {
 
 Pos operator*(const Affine& T, const Pos& p) {
     return T.linear * p + T.translation;
+}
+
+Affine operator*(const Affine& A, const Linear& L) noexcept {
+    return Affine(A.linear * L, A.translation);
+}
+
+Affine operator*(const Affine& A, const Affine& B) noexcept {
+    return Affine(A.linear * B.linear, A.linear * B.translation + A.translation);
 }
 
 Linear Linear::ScaleX(float k) {

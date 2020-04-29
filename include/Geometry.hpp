@@ -46,8 +46,12 @@ public:
     Pos pos;
 };
 
+Vec bounce(const Vec& inbound, const Vec& normal) noexcept;
+
 std::optional<float> intersect(const Ray&, const Triangle&) noexcept;
 
 std::optional<float> intersect(const Ray&, const Sphere&) noexcept;
 
-Vec randomHemisphereVectorUniform(Vec normal) noexcept;
+std::pair<float, float> randomPointInCircle() noexcept;
+
+Vec randomPointOnHemisphereUniform(Vec normal) noexcept;
