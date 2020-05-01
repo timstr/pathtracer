@@ -2,9 +2,11 @@
 #include <RandomNumberGenerator.hpp>
 
 #include <cassert>
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <numeric>
 #include <string>
 #include <thread>
 
@@ -12,21 +14,177 @@ namespace {
     constexpr float epsilon = 1e-6f;
 }
 
+Color::Color(float _r, float _g, float _b) noexcept
+    : r(_r)
+    , g(_g)
+    , b(_b) {
+
+}
+
 ColorBounce::ColorBounce(Color _emitted, Color _attenuation, Vec _direction) noexcept
     : emitted(_emitted)
     , attenuation(_attenuation)
     , direction(_direction) {
+    assert(std::abs(1.0f - direction.norm()) < epsilon);
+    assert(attenuation.r >= 0.0f && attenuation.r <= 1.0f);
+    assert(attenuation.g >= 0.0f && attenuation.g <= 1.0f);
+    assert(attenuation.b >= 0.0f && attenuation.b <= 1.0f);
+}
+
+BasicMaterial::BasicMaterial() noexcept
+    : m_diffuseReflection(0.3f)
+    , m_specularReflection(0.3f)
+    , m_specularSharpness(0.9f)
+    , m_reflectedAbsorption(Color{1.0f, 1.0f, 1.0f})
+    , m_emittedLuminance(Color{0.0f, 0.0f, 0.0f})
+    , m_transmittance(0.2f)
+    , m_indexOfRefraction(1.5f)
+    , m_internalAbsorption(Color{0.9f, 0.9f, 0.9f})
+    {
 
 }
 
-BasicGlossyMaterial::BasicGlossyMaterial(float _diffuseness, Color _reflectedColor, Color _emittedRadiance) noexcept
-    : diffuseness(_diffuseness)
-    , reflectedColor(_reflectedColor)
-    , emittedRadiance(_emittedRadiance) {
-
+float BasicMaterial::diffuseReflection() const noexcept {
+    return m_diffuseReflection;
 }
 
-ColorBounce BasicGlossyMaterial::deflect(const Vec& inbound, const Vec& normal) const noexcept {
+float BasicMaterial::specularReflection() const noexcept {
+    return m_specularReflection;
+}
+
+float BasicMaterial::specularSharpness() const noexcept {
+    return m_specularSharpness;
+}
+
+Color BasicMaterial::reflectedAbsorption() const noexcept {
+    return m_reflectedAbsorption;
+}
+
+Color BasicMaterial::emittedLuminance() const noexcept {
+    return m_emittedLuminance;
+}
+
+float BasicMaterial::transmittance() const noexcept {
+    return m_transmittance;
+}
+
+float BasicMaterial::indexOfRefraction() const noexcept {
+    return m_indexOfRefraction;
+}
+
+Color BasicMaterial::internalAbsorption() const noexcept {
+    return m_internalAbsorption;
+}
+
+void BasicMaterial::setDiffuseReflection(float r) noexcept {
+    assert(r >= 0.0f && r <= 1.0f);
+    m_diffuseReflection = r;
+}
+
+void BasicMaterial::setSpecularReflection(float r) noexcept {
+    assert(r >= 0.0f && r <= 1.0f);
+    m_specularReflection = r;
+}
+
+void BasicMaterial::setSpecularSharpness(float r) noexcept {
+    assert(r >= 0.0f && r <= 1.0f);
+    m_specularSharpness = r;
+}
+
+void BasicMaterial::setReflectedAbsorption(Color c) noexcept {
+    assert(c.r >= 0.0f && c.r <= 1.0f);
+    assert(c.g >= 0.0f && c.g <= 1.0f);
+    assert(c.b >= 0.0f && c.b <= 1.0f);
+    m_reflectedAbsorption = c;
+}
+
+void BasicMaterial::setEmittedLuminance(Color c) noexcept {
+    m_emittedLuminance = c;
+}
+
+void BasicMaterial::setTransmittance(float r) noexcept {
+    assert(r >= 0.0f && r <= 1.0f);
+    m_transmittance = r;
+}
+
+void BasicMaterial::setIndexOfRefraction(float i) noexcept {
+    assert(i >= 1.0f);
+    m_indexOfRefraction = i;
+}
+
+void BasicMaterial::setInternalAbsorption(Color c) noexcept {
+    assert(c.r >= 0.0f && c.r <= 1.0f);
+    assert(c.g >= 0.0f && c.g <= 1.0f);
+    assert(c.b >= 0.0f && c.b <= 1.0f);
+    m_internalAbsorption = c;
+}
+
+ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const noexcept {
+    const auto sinTheta = inbound * normal;
+
+    if (sinTheta >= 0.0f) {
+        // Collision from inside
+        const auto v = (inbound + ((inbound * normal) * (1.0f - m_indexOfRefraction) * normal)).unit();
+        if (v * normal >= 0.0f) {
+            // Refraction to outside
+            // TODO: diffuse/specular scatter
+            return ColorBounce{
+                Color{0.0f, 0.0f, 0.0f}, // TODO: emitted color?
+                Color{1.0f, 1.0f, 1.0f}, // TODO: internal absorption (requires knowing distance traveled)
+                inbound
+            };
+        } else {
+            // Total internal reflection
+            return ColorBounce{
+                Color{10.0f, 10.0f, 0.0f}, // HACK: yellow if total internal reflection
+                Color{0.0f, 0.0f, 0.0f}, // TODO: internal absorption (requires knowing distance traveled)
+                bounce(inbound, -normal)
+            };
+        }
+    }
+
+    const auto reflection = m_diffuseReflection + m_specularReflection;
+    const auto options = reflection + m_transmittance;
+    const auto dist = std::uniform_real_distribution<float>{0.0f, options};
+    const auto which = dist(randomEngine());
+    if (which < reflection){
+        // Reflection
+        if (which < m_diffuseReflection){
+            // Diffuse reflection
+            const auto v = randomPointOnHemisphereUniform(normal);
+            return ColorBounce{
+                m_emittedLuminance,
+                m_reflectedAbsorption,
+                v
+            };
+        } else {
+            // Specular reflection
+            const auto s = sinTheta * (1.0f - m_specularSharpness) * randomPointOnHemisphereUniform(normal);
+            const auto v = (bounce(inbound, normal) + s).unit();
+            return ColorBounce{
+                m_emittedLuminance,
+                m_reflectedAbsorption,
+                v
+            };
+        }
+    } else {
+        // Transmittance
+        const auto v = (inbound + ((inbound * normal) * (1.0f - 1.0f / m_indexOfRefraction) * normal)).unit();
+        return ColorBounce{
+            m_emittedLuminance,
+            m_reflectedAbsorption,
+            v
+        };
+    }
+
+
+    //const auto sinTheta = inbound * normal;
+    //const auto cosTheta = std::sqrt(1.0f - sinTheta * sinTheta);
+    //const auto b = bounce(inbound, normal);
+
+
+
+    /*
     assert(diffuseness >= 0.0f && diffuseness <= 1.0f);
     const auto n = (inbound * normal) >= 0.0f ? -normal : normal;
     const auto diffuseBounce = randomPointOnHemisphereUniform(n);
@@ -36,13 +194,14 @@ ColorBounce BasicGlossyMaterial::deflect(const Vec& inbound, const Vec& normal) 
         emittedRadiance,
         reflectedColor,
         ray
-    };
+    };*/
 }
 
 
-TriangleObject::TriangleObject(Triangle _geometry, BasicGlossyMaterial _material)
+TriangleObject::TriangleObject(Triangle _geometry, BasicMaterial _material)
     : geometry(_geometry)
     , material(_material) {
+
 }
 
 std::optional<float> TriangleObject::hit(const Ray& ray) const noexcept {
@@ -53,7 +212,21 @@ ColorBounce TriangleObject::deflect(const Ray& ray) const noexcept {
     return material.deflect(ray.dir, geometry.normal());
 }
 
-SphereObject::SphereObject(Sphere _geometry, BasicGlossyMaterial _material) noexcept
+Box TriangleObject::getBoundingBox() const noexcept {
+    const auto p0 = Pos{
+        std::min({geometry.a.x, geometry.b.x, geometry.c.x}),
+        std::min({geometry.a.y, geometry.b.y, geometry.c.y}),
+        std::min({geometry.a.z, geometry.b.z, geometry.c.z}),
+    };
+    const auto p1 = Pos{
+        std::max({geometry.a.x, geometry.b.x, geometry.c.x}),
+        std::max({geometry.a.y, geometry.b.y, geometry.c.y}),
+        std::max({geometry.a.z, geometry.b.z, geometry.c.z}),
+    };
+    return Box{p0, p1};
+}
+
+SphereObject::SphereObject(Sphere _geometry, BasicMaterial _material) noexcept
     : geometry(_geometry)
     , material(_material) {
 
@@ -67,14 +240,25 @@ ColorBounce SphereObject::deflect(const Ray& ray) const noexcept {
     return material.deflect(ray.dir, geometry.normal(ray.pos));
 }
 
-void Scene::addObject(std::unique_ptr<Object> o) noexcept {
-    m_objects.push_back(std::move(o));
+Box SphereObject::getBoundingBox() const noexcept {
+    return Box(geometry.center, geometry.radius * Vec{1.0f, 1.0f, 1.0f});
+}
+
+void Scene::addObject(std::unique_ptr<Object> object) noexcept {
+    m_objects.push_back(std::move(object));
+}
+
+Scene::Scene()
+    : m_objectTree(std::vector<const Object*>{}) {
+
 }
 
 Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
     auto color = Color{};
     auto attenuation = Color{1.0f, 1.0f, 1.0f};
     for (std::size_t i = 0; i < depth; ++i) {
+        // Brute force search
+        /*
         auto closestT = std::numeric_limits<float>::max();
         const Object* hitObj = nullptr;
         for (const auto& obj : m_objects) {
@@ -88,6 +272,17 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
         if (!hitObj) {
             return color;
         }
+        */
+
+        
+        // Tree search
+        const auto hit = m_objectTree.hit(ray);
+        if (!hit) {
+            return color;
+        }
+        const auto& [closestT, hitObj] = *hit;
+        
+
         // TODO: overload +=
         ray.pos = ray.pos + closestT * ray.dir;
         const auto bounce = hitObj->deflect(ray);
@@ -106,8 +301,26 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
         attenuation.g *= bounce.attenuation.g;
         attenuation.b *= bounce.attenuation.b;
         ray.dir = bounce.direction;
+
+        if (attenuation.r + attenuation.b + attenuation.g < epsilon) {
+            return color;
+        }
     }
     return color;
+}
+
+void Scene::updateGeometry() {
+    std::vector<const Object*> v;
+    v.reserve(m_objects.size());
+    std::transform(
+        m_objects.begin(),
+        m_objects.end(),
+        std::back_inserter(v),
+        [](const std::unique_ptr<Object>& o) {
+            return o.get();
+        }
+    );
+    m_objectTree = ObjectTree::Tree{v};
 }
 
 
@@ -171,7 +384,7 @@ void PerspectiveCamera::setFocalBlurRadius(float r) noexcept {
 Ray PerspectiveCamera::getViewRay(float screenX, float screenY) const noexcept {
     const auto x = screenX * 2.0f - 1.0f;
     const auto y = screenY * 2.0f - 1.0f;
-    const auto sp = m_aspectRatio > 1.0f ? Pos(x, y / m_aspectRatio) : Pos(x / m_aspectRatio, y);
+    const auto sp = m_aspectRatio > 1.0f ? Pos(x, y / m_aspectRatio) : Pos(x * m_aspectRatio, y);
     const auto dist = std::uniform_real_distribution<float>(0.0f, 1.0f);
     const auto blurAngle = 2.0f * 3.141592654f * dist(randomEngine());
 
@@ -181,8 +394,8 @@ Ray PerspectiveCamera::getViewRay(float screenX, float screenY) const noexcept {
     const auto blurY = randY * blurRad;
     const auto blurVec = Vec(blurX, blurY, 0.0f);
     const auto fovScale = std::tan(m_fieldOfView * 3.141592654f / 180.0f);
-    const auto viewVecOrigin = (Vec(fovScale * sp.x, fovScale * sp.y, 1.0f) + (blurVec / m_focalDistance)).unit();
-    const auto dir = m_transform * viewVecOrigin;
+    const auto viewVec = Vec(fovScale * sp.x, fovScale * sp.y, 1.0f) + (blurVec / m_focalDistance);
+    const auto dir = (m_transform * viewVec).unit();
     const auto pos = m_transform * (sp - blurVec);
     return { dir, pos };
 }
@@ -273,6 +486,17 @@ Image Renderer::render(const Scene& scene, const Camera& camera) const {
     const auto maxHeight = static_cast<float>(m_height - 1);
     const auto sppInv = 1.0f / static_cast<float>(m_samplesPerPixel);
 
+    const auto startTime = std::chrono::steady_clock::now();
+
+    const auto prettyPrintSeconds = [](std::size_t totalSeconds) {
+        const auto seconds = totalSeconds % 60;
+        const auto minutes = totalSeconds / 60 % 60;
+        const auto hours = totalSeconds / 3600;
+        std::cout
+            << std::setfill('0') << std::setw(2)
+            << hours << ':' << std::setw(2) << minutes << ':' << std::setw(2) << seconds;
+    };
+
     std::mutex printMutex;
     std::size_t numRowsCompleted = 0;
     const auto reportRowCompleted = [&]() {
@@ -282,15 +506,19 @@ Image Renderer::render(const Scene& scene, const Camera& camera) const {
         const auto totalWidth = 80;
         const auto progressBarWidth = static_cast<int>(totalWidth * pct);
         const auto remainingWidth = totalWidth - progressBarWidth;
+        const auto currTime = std::chrono::steady_clock::now();
+        const auto totalSeconds = std::chrono::duration_cast<std::chrono::seconds>(currTime - startTime).count();
+        
         std::cout
             << "\r["
             << std::string(progressBarWidth, '=')
             << std::string(remainingWidth, ' ')
             << "] "
-            << std::fixed
-            << std::setprecision(2)
-            << (pct * 100.0f)
-            << '%';
+            << std::fixed << std::setprecision(2)
+            << std::setfill('0') << std::setw(2)
+            << (pct * 100.0f) << "% - ";
+        prettyPrintSeconds(totalSeconds);
+
         std::cout.flush();
     };
 
@@ -332,6 +560,10 @@ Image Renderer::render(const Scene& scene, const Camera& camera) const {
         workers[i].join();
     }
     
+    std::cout << "\nRender completed after ";
+    const auto currTime = std::chrono::steady_clock::now();
+    const auto totalSeconds = std::chrono::duration_cast<std::chrono::seconds>(currTime - startTime).count();
+    prettyPrintSeconds(totalSeconds);
     std::cout << '\n';
 
     return img;

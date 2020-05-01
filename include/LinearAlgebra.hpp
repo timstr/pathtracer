@@ -10,7 +10,7 @@ public:
     float y;
     float z;
 
-    Vec(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
+    explicit Vec(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
 
     float norm() const noexcept;
 
@@ -25,7 +25,7 @@ public:
     float y;
     float z;
 
-    Pos(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
+    explicit Pos(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
 };
 
 class Linear {
@@ -50,14 +50,14 @@ public:
 
     Linear(float a, float b, float c, float d, float e, float f, float g, float h, float i) noexcept;
 
-    Vec row(int i) const noexcept;
-    Vec column(int i) const noexcept;
+    Vec row(std::size_t i) const noexcept;
+    Vec column(std::size_t i) const noexcept;
 
-    float operator[](int idx) const noexcept;
-    float& operator[](int idx) noexcept;
+    float operator[](std::size_t idx) const noexcept;
+    float& operator[](std::size_t idx) noexcept;
 
-    float operator()(int i, int j) const noexcept;
-    float& operator()(int i, int j) noexcept;
+    float operator()(std::size_t i, std::size_t j) const noexcept;
+    float& operator()(std::size_t i, std::size_t j) noexcept;
 
     Linear transpose() const noexcept;
 
@@ -71,8 +71,9 @@ private:
 
 class Affine {
 public:
-    Affine(const Linear& _linear = {}) noexcept;
-    Affine(const Linear& _linear, const Vec& _translation) noexcept;
+    Affine() noexcept = default;
+    explicit Affine(const Linear& _linear) noexcept;
+    explicit Affine(const Linear& _linear, const Vec& _translation) noexcept;
 
     static Affine Translation(const Vec&) noexcept;
     static Affine Translation(float x, float y, float z) noexcept;
@@ -95,11 +96,11 @@ Vec operator/(const Vec& v, float t) noexcept;
 Vec operator+(const Vec& u, const Vec& v) noexcept;
 Vec operator-(const Vec& u, const Vec& v) noexcept;
 
-// vector-point addition
+// vector-postd::size_t addition
 Pos operator+(const Pos& p, const Vec& v) noexcept;
 Pos operator+(const Vec& v, const Pos& p) noexcept;
 
-// vector-point subtraction
+// vector-postd::size_t subtraction
 Pos operator-(const Pos& p, const Vec& v) noexcept;
 
 // position-position subtraction
@@ -128,7 +129,7 @@ Linear operator/(const Linear& A, float t) noexcept;
 // linear-vector multiplication
 Vec operator*(const Linear& A, const Vec& v) noexcept;
 
-// linear-point multiplication
+// linear-postd::size_t multiplication
 Pos operator*(const Linear& A, const Pos& v) noexcept;
 
 // linear-linear multiplication
@@ -137,11 +138,12 @@ Linear operator*(const Linear& A, const Linear& B) noexcept;
 // affine-vector multiplication
 Vec operator*(const Affine& T, const Vec& v);
 
-// affine-point multiplication
+// affine-postd::size_t multiplication
 Pos operator*(const Affine& T, const Pos& p);
 
 // affine-linear multiplication
 Affine operator*(const Affine& A, const Linear& L) noexcept;
+Affine operator*(const Linear& L, const Affine& A) noexcept;
 
 // affine-affine multiplication
 Affine operator*(const Affine& A, const Affine& B) noexcept;

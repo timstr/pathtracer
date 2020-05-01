@@ -111,48 +111,52 @@ Linear::Linear(float a, float b, float c, float d, float e, float f, float g, fl
     }) {
 }
 
-Vec Linear::row(int i) const noexcept {
-    assert(i <= 3);
+Vec Linear::row(std::size_t i) const noexcept {
+    assert(i < 3);
     const auto& self = *this;
     return Vec(self(i, 0), self(i, 1), self(i, 2));
 }
 
-Vec Linear::column(int i) const noexcept {
-    assert(i <= 3);
+Vec Linear::column(std::size_t i) const noexcept {
+    assert(i < 3);
     const auto& self = *this;
     return Vec(self(0, i), self(1, i), self(2, i));
 }
 
-float Linear::operator[](int idx) const noexcept {
-    assert(idx <= 9);
+float Linear::operator[](std::size_t idx) const noexcept {
+    assert(idx < 9);
     return m_data[idx];
 }
 
-float& Linear::operator[](int idx) noexcept {
-    assert(idx <= 9);
+float& Linear::operator[](std::size_t idx) noexcept {
+    assert(idx < 9);
     return m_data[idx];
 }
 
-float Linear::operator()(int i, int j) const noexcept {
-    assert(i <= 3);
-    assert(j <= 3);
-    return m_data[3 * j + i];
+float Linear::operator()(std::size_t i, std::size_t j) const noexcept {
+    assert(i < 3);
+    assert(j < 3);
+    return m_data[3 * i + j];
 }
 
-float& Linear::operator()(int i, int j) noexcept {
-    assert(i <= 3);
-    assert(j <= 3);
-    return m_data[3 * j + i];
+float& Linear::operator()(std::size_t i, std::size_t j) noexcept {
+    assert(i < 3);
+    assert(j < 3);
+    return m_data[3 * i + j];
 }
 
 Linear Linear::transpose() const noexcept {
     const auto& [a, b, c, d, e, f, g, h, i] = m_data;
-    return Linear(a, d, g, b, e, h, c, f, i);
+    return Linear(
+        a, d, g,
+        b, e, h, 
+        c, f, i
+    );
 }
 
 float Linear::determinant() const noexcept {
     const auto& [a, b, c, d, e, f, g, h, i] = m_data;
-    return (a * e * i) + (b * f * g) + (c * d * h)
+    return (a * e * i) + (b * f * g) + (c * d * h) 
         - (c * e * g) - (b * d * i) - (a * f * h);
 }
 
@@ -177,11 +181,16 @@ std::optional<Linear> Linear::inverse() const noexcept {
     const auto H = c * d - a * f;
     const auto I = a * e - b * d;
 
-    return Linear(A, D, G, B, E, H, C, F, I) / det;
+    return Linear(
+        A, D, G,
+        B, E, H,
+        C, F, I
+    ) / det;
 }
 
 Affine::Affine(const Linear& _linear) noexcept
     : linear(_linear) {
+
 }
 
 Affine::Affine(const Linear& _linear, const Vec& _translation) noexcept
@@ -337,7 +346,11 @@ Pos operator*(const Affine& T, const Pos& p) {
 }
 
 Affine operator*(const Affine& A, const Linear& L) noexcept {
-    return Affine(A.linear * L, A.translation);
+    return Affine(A.linear * L,  A.translation);
+}
+
+Affine operator*(const Linear& L, const Affine& A) noexcept {
+    return Affine(L) * A;
 }
 
 Affine operator*(const Affine& A, const Affine& B) noexcept {
@@ -345,17 +358,33 @@ Affine operator*(const Affine& A, const Affine& B) noexcept {
 }
 
 Linear Linear::ScaleX(float k) {
-    return Linear(k, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f);
+    return Linear(
+        k,    0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 1.0f
+    );
 }
 
 Linear Linear::ScaleY(float k) {
-    return Linear(1.0f, 0.0f, 0.0f, 0.0f, k, 0.0f, 0.0f, 0.0f, 1.0f);
+    return Linear(
+        1.0f, 0.0f, 0.0f,
+        0.0f, k,    0.0f,
+        0.0f, 0.0f, 1.0f
+    );
 }
 
 Linear Linear::ScaleZ(float k) {
-    return Linear(1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, k);
+    return Linear(
+        1.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, k
+    );
 }
 
 Linear Linear::Scale(float k) {
-    return Linear(k, 0.0f, 0.0f, 0.0f, k, 0.0f, 0.0f, 0.0f, k);
+    return Linear(
+        k,    0.0f, 0.0f,
+        0.0f, k,    0.0f,
+        0.0f, 0.0f, k
+    );
 }

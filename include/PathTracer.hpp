@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Geometry.hpp>
+#include <ObjectTree.hpp>
 
 #include <memory>
 #include <optional>
@@ -9,11 +10,18 @@
 
 class Color {
 public:
+    explicit Color(float _r = 0.0f, float _g = 0.0f, float _b = 0.0f) noexcept;
+
     float r;
     float g;
     float b;
 };
 
+// TODO: rename this
+// TODO: add:
+// - current index of refraction
+// - distance from last bounce
+// TODO: replace color with scalar, add wavelength
 class ColorBounce {
 public:
     ColorBounce(Color _emitted, Color _attenuation, Vec _direction) noexcept;
@@ -22,6 +30,10 @@ public:
     Color attenuation;
     Vec direction;
 };
+
+// TODO: add an affine transformation to each Object,
+// cache its inverse and normal transformation, and
+// use these to transform rays during collision detection
 
 class Object {
 public:
@@ -47,51 +59,92 @@ public:
     // non-trivial geometric objects, refractive objects, partially transparent objects with
     // sub-surface scattering, volumetric objects like smoke, and weird light-deflecting media
     virtual ColorBounce deflect(const Ray& ray) const noexcept = 0;
+
+    // Returns the (ideally smallest) axis-aligned rectangle that fully contains the object
+    // This will be recomputed for every render
+    virtual Box getBoundingBox() const noexcept = 0;
 };
 
-class BasicGlossyMaterial {
+class BasicMaterial {
 public:
-    BasicGlossyMaterial(float diffuseNess = 0.7f, Color _reflectedColor = Color{1.0f, 1.0f, 1.0f}, Color _emittedRadiance = Color{0.0f, 0.0f, 0.0f}) noexcept;
+    BasicMaterial() noexcept;
 
-    float diffuseness;
-    Color reflectedColor;
-    Color emittedRadiance;
+    float diffuseReflection() const noexcept;
+    float specularReflection() const noexcept;
+    float specularSharpness() const noexcept;
+    Color reflectedAbsorption() const noexcept;
+    Color emittedLuminance() const noexcept;
+    float transmittance() const noexcept;
+    float indexOfRefraction() const noexcept;
+    Color internalAbsorption() const noexcept;
+
+    void setDiffuseReflection(float) noexcept;
+    void setSpecularReflection(float) noexcept;
+    void setSpecularSharpness(float) noexcept;
+    void setReflectedAbsorption(Color) noexcept;
+    void setEmittedLuminance(Color) noexcept;
+    void setTransmittance(float) noexcept;
+    void setIndexOfRefraction(float) noexcept;
+    void setInternalAbsorption(Color) noexcept;
 
     ColorBounce deflect(const Vec& inbound, const Vec& normal) const noexcept;
+
+private:
+    float m_diffuseReflection;
+    float m_specularReflection;
+    float m_specularSharpness;
+    Color m_reflectedAbsorption;
+    Color m_emittedLuminance;
+    float m_transmittance;
+    float m_indexOfRefraction;
+    Color m_internalAbsorption;
+    // TODO:
+    // float m_internalDensity;
+    // float m_internalScatterSharpness;
 };
 
 class TriangleObject : public Object {
 public:
     Triangle geometry;
-    BasicGlossyMaterial material;
+    BasicMaterial material;
 
-    TriangleObject(Triangle _geometry, BasicGlossyMaterial _material = {});
+    TriangleObject(Triangle _geometry, BasicMaterial _material = {});
 
     std::optional<float> hit(const Ray& ray) const noexcept override;
 
     ColorBounce deflect(const Ray& ray) const noexcept override;
+
+    Box getBoundingBox() const noexcept override;
 };
 
 class SphereObject : public Object {
 public:
     Sphere geometry;
-    BasicGlossyMaterial material;
-
-    SphereObject(Sphere _geometry, BasicGlossyMaterial _material = {}) noexcept;
+    BasicMaterial material;
+    
+    SphereObject(Sphere _geometry, BasicMaterial _material = {}) noexcept;
 
     std::optional<float> hit(const Ray& ray) const noexcept override;
 
     ColorBounce deflect(const Ray& ray) const noexcept override;
+
+    Box getBoundingBox() const noexcept override;
 };
 
 class Scene {
 public:
-    void addObject(std::unique_ptr<Object>) noexcept;
+    Scene();
+
+    void addObject(std::unique_ptr<Object> object) noexcept;
 
     Color trace(Ray ray, std::size_t depth) const noexcept;
 
+    void updateGeometry();
+
 private:
     std::vector<std::unique_ptr<Object>> m_objects;
+
+    ObjectTree::Tree m_objectTree;
 };
 
 class Camera {

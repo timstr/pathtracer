@@ -14,6 +14,7 @@ endif()
 set(pathtracer_headers
     include/LinearAlgebra.hpp
     include/Geometry.hpp
+    include/ObjectTree.hpp
     include/PathTracer.hpp
     include/RandomNumberGenerator.hpp
 )
@@ -21,6 +22,7 @@ set(pathtracer_headers
 set(pathtracer_srcs
     src/LinearAlgebra.cpp
     src/Geometry.cpp
+    src/ObjectTree.cpp
     src/PathTracer.cpp
     src/RandomNumberGenerator.cpp
 )
