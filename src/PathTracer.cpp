@@ -674,19 +674,32 @@ Box FractalObject::getBoundingBox() const noexcept {
 }
 
 float FractalObject::signedDistance(const Pos& p) const noexcept {
-    const auto n = std::size_t{4};
+    // Mandelbulb
+    const auto power = 8.0f;
 
-    const auto A = Linear::ScaleX(1.05f) *
-        Linear::RotationZ(0.4f) *
-        Affine::Translation(-1.0f, -1.0f, -1.0f) *
-        Linear::RotationY(-0.9f);
+    auto z = p.toVec();
+    auto dr = 1.0f;
+    auto r = 0.0f;
 
-    auto v = p.toVec();
-    for (std::size_t i = 0; i < 3 && v.normSquared() < 1000.0f; ++i) {
-        v = v.abs();
-        v = A * v;
+    for (int i = 0; i < 15; ++i) {
+        r = z.norm();
+        if (r > 2.0f) {
+            break;
+        }
+
+        const auto theta = std::acos(z.z / r) * power;
+        const auto phi = std::atan2(z.y, z.x) * power;
+        const auto zr = std::pow(r, power);
+        dr = std::pow(r, power - 1.0f) * power * dr + 1.0f;
+
+        z = zr * Vec{
+            std::sin(theta) * std::cos(phi),
+            std::sin(theta) * std::sin(phi),
+            std::cos(theta)
+        };
+        z = z + p.toVec(); 
     }
-    return (v.norm() - 2.0f) * std::pow(std::abs(A.linear.determinant()), static_cast<float>(n));
+    return 0.5f * std::log(r) * r / dr;
 
     // 5 x 5 x 5 spheres
     /*

@@ -150,7 +150,7 @@ int main() {
         m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
         m.setEmittedLuminance(Color{1.0f, 1.0f, 1.0f});
 
-        s.addObject(std::make_unique<BoxObject>(Box{Pos{0.0f, -2.0f, 0.0f}, Vec{1.0f, 0.1f, 1.0f}}, m));
+        s.addObject(std::make_unique<BoxObject>(Box{Pos{0.0f, -5.0f, 0.0f}, Vec{10.0f, 0.1f, 10.0f}}, m));
     }
 
     // Fractal
@@ -166,6 +166,7 @@ int main() {
     }
 
     // Test sphere
+    /*
     {
         auto o = std::make_unique<SphereObject>(Sphere{Pos{-1.6f, -0.8f, 0.0f}, 0.2f});
         o->material.setDiffuseReflection(1.0f);
@@ -174,7 +175,7 @@ int main() {
         o->material.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
         o->material.setEmittedLuminance(Color{0.01f, 0.03f, 0.1f});
         s.addObject(std::move(o));
-    }
+    }*/
 
     // Glass sphere
     /*{
@@ -214,7 +215,7 @@ int main() {
 
     auto c = PerspectiveCamera(Affine{});
     c.setAspectRatio(1.0f);
-    c.setFieldOfView(10.0f);
+    c.setFieldOfView(2.0f);
     c.setFocalDistance(5.0f);
     c.setFocalBlurRadius(0.0f);
     const auto translation = Affine::Translation(0.0f, 0.0f, -5.0f);
@@ -222,10 +223,10 @@ int main() {
     const auto T = scale * translation;
     c.setTransform(T);
 
-    auto r = Renderer{256, 256};
+    auto r = Renderer{512, 512};
     // r.setNumThreads(1);
     r.setNumBounces(16);
-    r.setSamplesPerPixel(8);
+    r.setSamplesPerPixel(1024);
 
     std::cout << "Using " << r.numThreads() << " threads\n";
 
