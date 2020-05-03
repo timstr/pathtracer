@@ -1,3 +1,4 @@
+#include "..\include\PathTracer.hpp"
 #include <PathTracer.hpp>
 #include <RandomNumberGenerator.hpp>
 
@@ -136,7 +137,7 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
         } else {
             // Total internal reflection
             return ColorBounce{
-                Color{10.0f, 10.0f, 0.0f}, // HACK: yellow if total internal reflection
+                Color{0.0f, 0.0f, 0.0f}, // HACK: yellow if total internal reflection
                 Color{0.0f, 0.0f, 0.0f}, // TODO: internal absorption (requires knowing distance traveled)
                 bounce(inbound, -normal)
             };
@@ -169,6 +170,7 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
         }
     } else {
         // Transmittance
+        // TODO: specular/diffuse scattering
         const auto v = (inbound + ((inbound * normal) * (1.0f - 1.0f / m_indexOfRefraction) * normal)).unit();
         return ColorBounce{
             m_emittedLuminance,
@@ -614,4 +616,99 @@ Image ReinhardToneMapper::operator()(const Image& img) const noexcept {
         }
     }
     return ret;
+}
+
+BoxObject::BoxObject(Box _geometry, BasicMaterial _material) noexcept
+    : geometry(_geometry)
+    , material(_material) {
+
+}
+
+std::optional<float> BoxObject::hit(const Ray& ray) const noexcept {
+    return intersect(ray, geometry);
+}
+
+ColorBounce BoxObject::deflect(const Ray& ray) const noexcept {
+    return material.deflect(ray.dir, geometry.normal(ray.pos));
+}
+
+Box BoxObject::getBoundingBox() const noexcept {
+    return geometry;
+}
+
+std::optional<float> FractalObject::hit(const Ray& ray) const noexcept {
+    auto r = ray;
+    auto t = 0.0f;
+    auto pd = std::numeric_limits<float>::min();
+    for (std::size_t i = 0; i < 128; ++i) {
+        auto d = signedDistance(r.pos);
+        if (d < pd && d < 1e-6f) {
+            return t;
+        }
+        t += d;
+        r.pos = r.pos + d * r.dir;
+        pd = d;
+    }
+    return std::nullopt;
+}
+
+ColorBounce FractalObject::deflect(const Ray& ray) const noexcept {
+    const auto delta = 1e-6f;
+    const auto dx = Vec{delta, 0.0f, 0.0f};
+    const auto dy = Vec{0.0f, delta, 0.0f};
+    const auto dz = Vec{0.0f, 0.0f, delta};
+    const auto n = Vec{
+        signedDistance(ray.pos + dx) - signedDistance(ray.pos - dx),
+        signedDistance(ray.pos + dy) - signedDistance(ray.pos - dy),
+        signedDistance(ray.pos + dz) - signedDistance(ray.pos - dz)
+    }.unit();
+
+    return material.deflect(ray.dir, n);
+}
+
+Box FractalObject::getBoundingBox() const noexcept {
+    return Box{
+        Pos{0.0f, 0.0f, 0.0f},
+        Vec{3.0f, 3.0f, 3.0f}
+    };
+}
+
+float FractalObject::signedDistance(const Pos& p) const noexcept {
+    const auto n = std::size_t{4};
+
+    const auto A = Linear::ScaleX(1.05f) *
+        Linear::RotationZ(0.4f) *
+        Affine::Translation(-1.0f, -1.0f, -1.0f) *
+        Linear::RotationY(-0.9f);
+
+    auto v = p.toVec();
+    for (std::size_t i = 0; i < 3 && v.normSquared() < 1000.0f; ++i) {
+        v = v.abs();
+        v = A * v;
+    }
+    return (v.norm() - 2.0f) * std::pow(std::abs(A.linear.determinant()), static_cast<float>(n));
+
+    // 5 x 5 x 5 spheres
+    /*
+    const auto f = [](float v) {
+        const auto l = 1.0f;
+        const auto r = 2.0f;
+        if (v < -l) {
+            return v + l;
+        } else if (v > l) {
+            return v - l;
+        } else {
+            v *= r;
+            return (v - std::round(v)) / r;
+        }
+    };
+
+    const auto v = Vec{
+        f(p.x),
+        f(p.y),
+        f(p.z)
+    };
+
+    return v.norm() - 0.2f;
+    */
 }

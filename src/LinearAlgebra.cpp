@@ -28,11 +28,23 @@ Vec Vec::unit() const noexcept {
     return Vec(x / l, y / l, z / l);
 }
 
+Vec Vec::abs() const noexcept {
+    return Vec{
+        std::abs(x),
+        std::abs(y),
+        std::abs(z),
+    };
+}
+
 Pos::Pos(float _x, float _y, float _z) noexcept
     : x(_x)
     , y(_y)
     , z(_z) {
 
+}
+
+Vec Pos::toVec() const noexcept {
+    return Vec{x, y, z};
 }
 
 Linear Linear::Identity() noexcept {

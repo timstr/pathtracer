@@ -131,6 +131,34 @@ public:
     Box getBoundingBox() const noexcept override;
 };
 
+class BoxObject : public Object {
+public:
+    Box geometry;
+    BasicMaterial material;
+
+    BoxObject(Box _geometry, BasicMaterial _material = {}) noexcept;
+
+    std::optional<float> hit(const Ray& ray) const noexcept override;
+
+    ColorBounce deflect(const Ray& ray) const noexcept override;
+
+    Box getBoundingBox() const noexcept override;
+};
+
+class FractalObject : public Object {
+public:
+    BasicMaterial material;
+    
+    std::optional<float> hit(const Ray& ray) const noexcept override;
+
+    ColorBounce deflect(const Ray& ray) const noexcept override;
+
+    Box getBoundingBox() const noexcept override;
+
+private:
+    float signedDistance(const Pos&) const noexcept;
+};
+
 class Scene {
 public:
     Scene();

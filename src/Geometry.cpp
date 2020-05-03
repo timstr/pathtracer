@@ -66,6 +66,35 @@ float Box::volume() const noexcept {
     return halfSize.x * halfSize.y * halfSize.z * 8.0f;
 }
 
+Vec Box::normal(Pos p) const noexcept {
+    const auto q = p - center;
+    const auto ax = std::abs(q.x / halfSize.x);
+    const auto ay = std::abs(q.y / halfSize.y);
+    const auto az = std::abs(q.z / halfSize.z);
+
+    const auto sign = [](float v) {
+        return v > 0.0f ? 1.0f : -1.0f;
+    };
+
+    if (ax > ay) {
+        if (ax > az) {
+            // ax > ay and ax > az
+            return Vec{sign(q.x), 0.0f, 0.0f};
+        } else {
+            // az > ax > ay
+            return Vec{0.0f, 0.0f, sign(q.z)};
+        }
+    } else {
+        if (ay > az) {
+            // ay > ax and ay > az
+            return Vec{0.0f, sign(q.y), 0.0f};
+        } else {
+            // az > ay > ax
+            return Vec{0.0f, 0.0f, sign(q.z)};
+        }
+    }
+}
+
 Box boxContaining(const Box& a, const Box& b) noexcept {
     const auto aBegin = a.center - a.halfSize;
     const auto aEnd = a.center + a.halfSize;

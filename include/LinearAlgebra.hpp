@@ -17,6 +17,8 @@ public:
     float normSquared() const noexcept;
 
     Vec unit() const noexcept;
+
+    Vec abs() const noexcept;
 };
 
 class Pos {
@@ -26,6 +28,8 @@ public:
     float z;
 
     explicit Pos(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
+
+    Vec toVec() const noexcept;
 };
 
 class Linear {

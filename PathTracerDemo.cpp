@@ -57,135 +57,199 @@ int main() {
     auto s = Scene{};
 
     // Random spheres
-    auto pDist = std::uniform_real_distribution<float>{0.0f, 1.0f};
-    auto pnDist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
-    for (std::size_t i = 0; i < 500; ++i) {
-        const auto x = pDist(randomEngine());
-        const auto y = pDist(randomEngine());
-        const auto geom = Sphere(
-            Pos(3.5f * (2.0f * x - 1.0f), 3.5f * (2.0f * y - 1.0f), 1.0f * pnDist(randomEngine())),
-            0.5f * pDist(randomEngine())
-        );
-        auto o = std::make_unique<SphereObject>(geom);
-        o->material.setDiffuseReflection(pDist(randomEngine()));
-        o->material.setSpecularReflection(pDist(randomEngine()));
-        o->material.setSpecularSharpness(pDist(randomEngine()));
-        o->material.setTransmittance(pDist(randomEngine()));
-        o->material.setIndexOfRefraction(1.0f + 0.8f * pDist(randomEngine()));
-        o->material.setReflectedAbsorption(Color{
-            0.3f + 0.7f * x,
-            0.3f + 0.7f * y,
-            0.3f + 0.7f * pDist(randomEngine())
-        });
-        o->material.setEmittedLuminance(Color{
-            0.2f * x,
-            0.2f * y,
-            0.1f * pDist(randomEngine())
-        });
-
-        s.addObject(std::move(o));
-    }
-
-    // one sphere
+    /*
     {
-        const auto geom = Sphere(
-            Pos(0.0f, 0.1f, 0.0f),
-            0.1f
-        );
-        auto o = std::make_unique<SphereObject>(geom);
-        o->material.setDiffuseReflection(1.0f);
-        o->material.setSpecularReflection(1.0f);
-        o->material.setSpecularSharpness(0.8f);
-        o->material.setTransmittance(0.0f);
-        o->material.setReflectedAbsorption(Color{0.2f, 0.4f, 0.9f});
-        o->material.setEmittedLuminance(Color{0.0f, 0.7f, 0.2f});
-
-        s.addObject(std::move(o));
+        const auto pdist = std::uniform_real_distribution<float>{0.0f, 1.0f};
+        const auto sdist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+        for (std::size_t i = 0; i < 30; ++i) {
+            const auto geom = Sphere{
+                Pos{
+                    5.0f * sdist(randomEngine()),
+                    -4.0f - 1.0f * sdist(randomEngine()),
+                    5.0f * sdist(randomEngine())
+                },
+                0.1f + 0.4f * sdist(randomEngine())
+            };
+            auto o = std::make_unique<SphereObject>(geom);
+            o->material.setDiffuseReflection(1.0f);
+            o->material.setSpecularReflection(0.0f);
+            o->material.setTransmittance(0.0f);
+            o->material.setEmittedLuminance(Color{
+                5.0f * pdist(randomEngine()),
+                5.0f * pdist(randomEngine()),
+                5.0f * pdist(randomEngine())
+            });
+            s.addObject(std::move(o));
+        }
     }
+    */
+
+    // Globe of cubes
+    /*
+    {
+        const auto res = std::size_t{32};
+        const auto size = 3.0f;
+        const auto dsize = size / static_cast<float>(res);
+        const auto mapToSpace = [&](std::size_t idx) {
+            return (static_cast<float>(idx) / static_cast<float>(res - 1) * 2.0f - 1.0f) * size;
+        };
+
+
+        const auto dist = std::uniform_real_distribution<float>{0.0f, 1.0f};
+
+        for (std::size_t i = 0; i < res; ++i){
+            const auto x = mapToSpace(i);
+            for (std::size_t j = 0; j < res; ++j){
+                const auto y = mapToSpace(j);
+                for (std::size_t k = 0; k < res; ++k){
+                    const auto z = mapToSpace(k);
+                    if (x * x + y * y + z * z > size) {
+                        continue;
+                    }
+
+                    if (dist(randomEngine()) < 0.1f) {
+                        continue;
+                    }
+
+                    auto b = Box{Pos{}, Vec{dsize, dsize, dsize}};
+                    b.halfSize.x *= (1.0f + 1.0f * dist(randomEngine()));
+                    b.halfSize.y *= (1.0f + 1.0f * dist(randomEngine()));
+                    b.halfSize.z *= (1.0f + 1.0f * dist(randomEngine()));
+                    b.center = Pos{ x, y, z };
+
+                    auto m = BasicMaterial{};
+                    if (dist(randomEngine()) < 0.7f) {
+                        m.setDiffuseReflection(1.0f);
+                        m.setSpecularReflection(0.05f);
+                        m.setSpecularSharpness(0.9f);
+                        m.setTransmittance(0.0f);
+                        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+                        m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+                    } else {
+                        m.setDiffuseReflection(0.02f);
+                        m.setSpecularReflection(0.2f);
+                        m.setSpecularSharpness(0.99f);
+                        m.setTransmittance(0.95f);
+                        m.setIndexOfRefraction(1.55f);
+                        m.setReflectedAbsorption(Color{0.8f, 0.9f, 1.0f});
+                        m.setEmittedLuminance(Color{0.01f, 0.02f, 0.04f});
+                    }
+                    s.addObject(std::make_unique<BoxObject>(b, m));
+                }
+            }
+        }
+    }
+    */
 
     // light source
     {
-        const auto geom = Sphere(
-            Pos(0.0f, -100.0f, 0.0f),
-            40.0f
-        );
-        auto o = std::make_unique<SphereObject>(geom);
-        o->material.setDiffuseReflection(1.0f);
-        o->material.setSpecularReflection(0.0f);
-        o->material.setTransmittance(0.0f);
-        o->material.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
-        o->material.setEmittedLuminance(Color{30.0f, 20.0f, 10.0f});
+        auto m = BasicMaterial{};
+        m.setDiffuseReflection(1.0f);
+        m.setSpecularReflection(0.0f);
+        m.setTransmittance(0.0f);
+        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+        m.setEmittedLuminance(Color{1.0f, 1.0f, 1.0f});
 
+        s.addObject(std::make_unique<BoxObject>(Box{Pos{0.0f, -2.0f, 0.0f}, Vec{1.0f, 0.1f, 1.0f}}, m));
+    }
+
+    // Fractal
+    {
+        auto o = std::make_unique<FractalObject>();
+        o->material.setDiffuseReflection(1.0f);
+        o->material.setSpecularReflection(0.3f);
+        o->material.setSpecularSharpness(0.97f);
+        o->material.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+        o->material.setEmittedLuminance(Color{0.01f, 0.03f, 0.1f});
+        
         s.addObject(std::move(o));
     }
 
-
-    s.updateGeometry();
-
-    auto c = PerspectiveCamera(Affine{});
-    c.setAspectRatio(1.0f);
-    c.setFieldOfView(5.0f);
-    c.setFocalDistance(50.0f);
-    c.setFocalBlurRadius(0.0f);// 0.1f);
-    const auto translation = Affine::Translation(0.0f, 0.0f, -500.0f);
-    const auto scale = Linear::RotationX(3.141592654f * 0.0f) * Linear::Scale(0.1f);
-    const auto T = scale * translation;
-    c.setTransform(T);
-
-    auto r = Renderer{1024, 1024};
-    r.setNumBounces(32);
-    r.setSamplesPerPixel(1024);
-
-    std::cout << "Using " << r.numThreads() << " threads\n";
-
+    // Test sphere
     {
-        auto lrr = r;
-        lrr.setWidth(r.width() / 8);
-        lrr.setHeight(r.height() / 8);
-        lrr.setSamplesPerPixel(std::max(r.samplesPerPixel() / 2, std::size_t{1}));
-        std::cout << "Low resolution version\n";
-
-        auto rendered = lrr.render(s, c);
-        saveImage(rendered, "output low res.png");
+        auto o = std::make_unique<SphereObject>(Sphere{Pos{-1.6f, -0.8f, 0.0f}, 0.2f});
+        o->material.setDiffuseReflection(1.0f);
+        o->material.setSpecularReflection(0.3f);
+        o->material.setSpecularSharpness(0.97f);
+        o->material.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+        o->material.setEmittedLuminance(Color{0.01f, 0.03f, 0.1f});
+        s.addObject(std::move(o));
     }
-    std::cout << "High resolution version\n";
-
-    {
-        auto rendered = r.render(s, c);
-
-        // auto tm = ReinhardToneMapper();
-        // auto toneMapped = tm(rendered);
-
-        saveImage(rendered, "output before.png");
-    }
-
 
     // Glass sphere
-    {
+    /*{
         const auto geom = Sphere(
-            Pos(0.0f, 0.0f, -49.5f),
-            0.1f
+            Pos(0.0f, -1.0f, 0.0f),
+            1.5f
         );
         auto o = std::make_unique<SphereObject>(geom);
         o->material.setDiffuseReflection(0.05f);
         o->material.setSpecularReflection(0.1f);
         o->material.setSpecularSharpness(1.0f);
         o->material.setTransmittance(0.9f);
-        o->material.setIndexOfRefraction(1.2f);
+        o->material.setIndexOfRefraction(1.55f);
         o->material.setReflectedAbsorption(Color{0.9f, 0.9f, 0.9f});
         o->material.setEmittedLuminance(Color{0.1f, 0.1f, 0.1f});
 
         s.addObject(std::move(o));
-        s.updateGeometry();
+    }*/
+    
+
+    // Ground plane
+    /*{
+        auto o = std::make_unique<BoxObject>(
+            Box{Pos{0.0f, 2.0f, 0.0f}, Vec{5.0f, 0.1f, 5.0f}}
+        );
+        o->material.setDiffuseReflection(1.0f);
+        o->material.setSpecularReflection(0.0f);
+        o->material.setSpecularSharpness(0.4f);
+        o->material.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+        o->material.setTransmittance(0.0f);
+        o->material.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+        s.addObject(std::move(o));
+    }*/
+
+
+    s.updateGeometry();
+
+    auto c = PerspectiveCamera(Affine{});
+    c.setAspectRatio(1.0f);
+    c.setFieldOfView(10.0f);
+    c.setFocalDistance(5.0f);
+    c.setFocalBlurRadius(0.0f);
+    const auto translation = Affine::Translation(0.0f, 0.0f, -5.0f);
+    const auto scale = Linear::RotationX(3.141592654f * -0.1f) * Linear::RotationY(0.4f);
+    const auto T = scale * translation;
+    c.setTransform(T);
+
+    auto r = Renderer{256, 256};
+    // r.setNumThreads(1);
+    r.setNumBounces(16);
+    r.setSamplesPerPixel(8);
+
+    std::cout << "Using " << r.numThreads() << " threads\n";
+
+    /*
+    {
+        auto lrr = r;
+        lrr.setWidth(r.width() / 8);
+        lrr.setHeight(r.height() / 8);
+        lrr.setSamplesPerPixel(std::max(r.samplesPerPixel(), std::size_t{1}));
+        std::cout << "Low resolution version\n";
+
+        auto rendered = lrr.render(s, c);
+        saveImage(rendered, "output low res.png");
     }
+    std::cout << "High resolution version\n";
+    */
 
     {
         auto rendered = r.render(s, c);
 
-        // auto tm = ReinhardToneMapper();
-        // auto toneMapped = tm(rendered);
+        //auto tm = ReinhardToneMapper();
+        //auto toneMapped = tm(rendered);
 
-        saveImage(rendered, "output after.png");
+        saveImage(rendered, "output.png");
     }
 
 
