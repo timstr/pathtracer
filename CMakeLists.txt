@@ -57,6 +57,10 @@ if(MSVC)
 	# disable warning C4250 ("class X inherits virtual member function Y via dominance")
 	add_definitions(/wd4250)
 
+    # Sane exception handling
+    # https://docs.microsoft.com/en-us/cpp/build/reference/eh-exception-handling-model?view=msvc-170
+    add_definitions(/EHsc)
+
 	# turn warning C4239 (non-standard extension that allows temporaries to be bound to
 	# non-const references, yay microsoft) into an error
 	# This extension is without question the source of many bugs and disastrous surprises
@@ -64,6 +68,11 @@ if(MSVC)
 
     # Conformance mode (to heck with all silly Microsoft language extensions)
     add_definitions(/permissive-)
+
+    # Speeeeeeed
+    set(
+        CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /fp:fast /GL"
+    )
 else()
 	SET(CMAKE_CXX_FLAGS -pthread)
 endif()

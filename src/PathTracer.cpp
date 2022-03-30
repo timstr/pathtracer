@@ -582,6 +582,14 @@ std::size_t Renderer::samplesPerPixel() const noexcept {
     return m_samplesPerPixel;
 }
 
+void Renderer::setSize(size_t w, size_t h) noexcept {
+    assert(w > 0);
+    assert(h > 0);
+    const auto sizeMutexLock = std::lock_guard(m_sizeMutex);
+    m_width = w;
+    m_height = h;
+}
+
 void Renderer::setNumBounces(std::size_t n) noexcept {
     assert(n > 0);
     m_numBounces = n;
@@ -642,6 +650,8 @@ void Renderer::doWork() const noexcept {
         const auto& camera = *m_renderData->camera;
         const auto& scene = *m_renderData->scene;
         auto& img = *m_renderData->image;
+        assert(m_width == img.width());
+        assert(m_height == img.height());
 
         const auto maxWidth = static_cast<float>(m_width - 1);
         const auto maxHeight = static_cast<float>(m_height - 1);
@@ -652,7 +662,7 @@ void Renderer::doWork() const noexcept {
         const auto jitterY = std::uniform_real_distribution<float>{ -0.5f * deltaY, 0.5f * deltaY };
         while (true) {
             const auto taskIndex = m_nextTaskIndex.fetch_add(1);
-            auto taskMaybe = this->make_task(taskIndex);
+            auto taskMaybe = Renderer::makeTask(taskIndex, m_width, m_height);
             if (!taskMaybe.has_value()) {
                 break;
             }
@@ -688,21 +698,20 @@ void Renderer::doWork() const noexcept {
     }
 }
 
-std::optional<Renderer::render_task> Renderer::make_task(
-    size_t taskIndex
-) const noexcept {
-    assert(m_renderData.has_value());
-    const auto& imgPtr = m_renderData->image;
-    assert(imgPtr != nullptr);
-    const auto tasksPerRow = imgPtr->width() / s_pixelsPerTask;
+std::optional<Renderer::render_task> Renderer::makeTask(
+    size_t taskIndex,
+    size_t width,
+    size_t height
+) noexcept {
+    const auto tasksPerRow = width / s_pixelsPerTask;
     const auto xStart = s_pixelsPerTask * (taskIndex % tasksPerRow);
     const auto y = taskIndex / tasksPerRow;
-    if (y >= imgPtr->height()) {
+    if (y >= height) {
         return std::nullopt;
     }
     const auto xEnd = std::min(
         xStart + s_pixelsPerTask,
-        imgPtr->width()
+        width
     );
     return render_task {
         xStart,
@@ -715,6 +724,7 @@ Image Renderer::render(
     const Scene& scene,
     const Camera& camera
 ) {
+    const auto sizeMutexLock = std::lock_guard(m_sizeMutex);
     if (m_threadPool.size() == 0) {
         this->startThreadPool();
     }
@@ -730,6 +740,7 @@ Image Renderer::render(
     m_nextTaskIndex.store(0);
     assert(m_renderBarrierMaybe.has_value());
     assert(!m_timeToExit.load());
+
     // Phase 1: threads are all waiting at the barrier to start working.
     // This last thread arriving starts them
     m_renderBarrierMaybe->arrive_and_wait();

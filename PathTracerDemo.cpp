@@ -43,8 +43,10 @@ void copyToSFImage(const Image& src, sf::Image& dst, float k) {
         dst.create(
             static_cast<unsigned int>(src.width()),
             static_cast<unsigned int>(src.height())
-    );
+        );
     }
+    assert(dst.getSize().x == src.width());
+    assert(dst.getSize().y == src.height());
     for (unsigned x = 0; x < src.width(); ++x) {
         for (unsigned y = 0; y < src.height(); ++y) {
             auto color = k * src(x, y);
@@ -92,7 +94,7 @@ int main() {
         mirror.setReflectedAbsorption(Color(0.9f, 0.9f, 0.9f));
 
         const auto d = 0.01f;
-        
+
         auto& lightSource = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), glowing);
         lightSource.setTransformation(Affine::Translation(Vec{0.0f, -5.0f + 2.0f * d, 0.0f}));
 
@@ -101,14 +103,14 @@ int main() {
 
         auto& rearWall = s.addObject<BoxObject>(Rectangle(Vec{5.0f, 5.0f, d}), matteWhite);
         rearWall.setTransformation(Affine::Translation(Vec{0.0f, 0.0f, 5.0f}));
-        
+
         auto& floor = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
         floor.setTransformation(Affine::Translation(Vec{0.0f, 5.0f, 0.0f}));
 
         // ceiling
         auto& ceiling = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
         ceiling.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
-        
+
         // left wall
         auto& leftWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteRed);
         leftWall.setTransformation(Affine::Translation(Vec{-5.0f, 0.0f, 0.0f}));
@@ -116,12 +118,12 @@ int main() {
         // right wall
         auto& rightWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteGreen);
         rightWall.setTransformation(Affine::Translation(Vec{5.0f, 0.0f, 0.0f}));
-        
+
         // front box
         // auto& box = s.addObject<BoxObject>(Rectangle(Vec{1.5f, 2.0, 1.5f}), matteWhite);
         // box.setTransformation(Affine::Translation(Vec{-1.5f, 3.0f, 1.0f}) * Linear::RotationY(0.4136f));
         // box.material.setReflectedAbsorption(Color(0.5f, 0.5f, 1.0f));
-        
+
         auto& whiteSphere1 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
         whiteSphere1.setTransformation(Affine::Translation(Vec{-3.0f, 3.5f, -2.5f}));
 
@@ -133,7 +135,7 @@ int main() {
 
         auto& mirrorSphere2 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
         mirrorSphere2.setTransformation(Affine::Translation(Vec{-3.0f, -3.5f, 2.5f}));
-        
+
         // auto& fractal = s.addObject<FractalObject>();
         // fractal.material = matteGray;
         // fractal.material.setEmittedLuminance(Color(0.05f, 0.1f, 0.2f));
@@ -171,15 +173,15 @@ int main() {
                         continue;
                     }
 
-                    if (dist(randomEngine()) < 0.1f) {
+                    if (dist(randomEngine()) < 0.3f) {
                         continue;
                     }
 
-                    auto b = Box{Pos{}, Vec{dsize, dsize, dsize}};
-                    b.halfSize.x *= (1.0f + 1.0f * dist(randomEngine()));
-                    b.halfSize.y *= (1.0f + 1.0f * dist(randomEngine()));
-                    b.halfSize.z *= (1.0f + 1.0f * dist(randomEngine()));
-                    b.center = Pos{ x, y, z };
+                    const auto r = Rectangle(dsize * Vec(
+                        (1.0f + 1.0f * dist(randomEngine())),
+                        (1.0f + 1.0f * dist(randomEngine())),
+                        (1.0f + 1.0f * dist(randomEngine()))
+                    ));
 
                     auto m = BasicMaterial{};
                     if (dist(randomEngine()) < 0.7f) {
@@ -198,7 +200,8 @@ int main() {
                         m.setReflectedAbsorption(Color{0.8f, 0.9f, 1.0f});
                         m.setEmittedLuminance(Color{0.01f, 0.02f, 0.04f});
                     }
-                    s.addObject(std::make_unique<BoxObject>(b, m));
+                    auto& b = s.addObject<BoxObject>(r, m);
+                    b.setTransformation(Affine::Translation(Vec(x, y, z)));
                 }
             }
         }
@@ -214,7 +217,8 @@ int main() {
         m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
         m.setEmittedLuminance(Color{1.0f, 1.0f, 1.0f});
 
-        s.addObject(std::make_unique<BoxObject>(Box{Pos{0.0f, -5.0f, 0.0f}, Vec{10.0f, 0.1f, 10.0f}}, m));
+        auto& b = s.addObject<BoxObject>(Rectangle(Vec(10.0f, 0.1f, 10.0f)), m);
+        b.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
     }*/
 
     // Fractal
@@ -225,7 +229,7 @@ int main() {
         o->material.setSpecularSharpness(0.97f);
         o->material.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
         o->material.setEmittedLuminance(Color{0.01f, 0.03f, 0.1f});
-        
+
         s.addObject(std::move(o));
     }*/
 
@@ -258,7 +262,7 @@ int main() {
 
         s.addObject(std::move(o));
     }*/
-    
+
 
     // Ground plane
     /*{
@@ -318,12 +322,7 @@ int main() {
         static_cast<unsigned int>(r.width()),
         static_cast<unsigned int>(r.height())
     );
-    auto spr = sf::Sprite();
-    // spr.setScale(sf::Vector2f(
-    //     static_cast<float>(r.width()),
-    //     static_cast<float>(r.height())
-    // ));
-    spr.setTexture(tex);
+    auto spr = sf::Sprite(tex);
 
     auto acc = Image(r.width(), r.height());
     auto count = size_t{0};
@@ -335,6 +334,24 @@ int main() {
         while (window.pollEvent(event)) {
             if (event.type == sf::Event::Closed) {
                 running = false;
+            } else if (event.type == sf::Event::Resized) {
+                window.setView(sf::View(sf::FloatRect(
+                    0.0f,
+                    0.0f,
+                    static_cast<float>(event.size.width),
+                    static_cast<float>(event.size.height)
+                )));
+                r.setSize(
+                    event.size.width,
+                    event.size.height
+                );
+                c.setAspectRatio(
+                    static_cast<float>(event.size.width)
+                    / static_cast<float>(event.size.height)
+                );
+                acc = Image(r.width(), r.height());
+                tex.create(event.size.width, event.size.height);
+                count = 0;
             } else if (event.type == sf::Event::KeyPressed) {
                 auto delta = Vec(0.0f, 0.0f, 0.0f);
                 switch (event.key.code) {
@@ -346,7 +363,9 @@ int main() {
                     case sf::Keyboard::Key::E: delta.y += 1.0f; break;
                     case sf::Keyboard::Key::Dash:
                         if (event.key.control) {
-                            c.setFocalBlurRadius(c.focalBlurRadius() - 0.1f);
+                            c.setFocalBlurRadius(
+                                std::max(0.0f, c.focalBlurRadius() - 0.1f)
+                            );
                         } else {
                             c.setFieldOfView(c.fieldOfView() + 1.0f);
                         }
@@ -364,7 +383,10 @@ int main() {
                         auto now = std::time(nullptr);
                         auto tm = *std::localtime(&now);
                         auto ss = std::ostringstream{};
-                        ss << "image "
+                        // TODO: use std::filesystem and create the output
+                        // directory if it doesn't already exist
+                        // or change working directory in CMake
+                        ss << "../output/image "
                             << std::put_time(&tm, "%Y-%m-%d %H-%M-%S")
                             << ".png";
                         const auto path = ss.str();
@@ -397,7 +419,7 @@ int main() {
         if (resetAcc) {
             acc.fill(Color(0.0f, 0.0f, 0.0f));
             count = 0;
-    }
+        }
 
         auto rendered = r.render(s, c);
         acc += rendered;

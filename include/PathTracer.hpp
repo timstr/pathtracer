@@ -269,8 +269,8 @@ public:
     Image& operator+=(const Image& other) noexcept;
 
 private:
-    const std::size_t m_width;
-    const std::size_t m_height;
+    size_t m_width;
+    size_t m_height;
     std::vector<Color> m_data;
 };
 
@@ -289,6 +289,7 @@ public:
     std::size_t numBounces() const noexcept;
     std::size_t samplesPerPixel() const noexcept;
 
+    void setSize(size_t width, size_t height) noexcept;
     void setNumBounces(std::size_t) noexcept;
     void setSamplesPerPixel(std::size_t) noexcept;
 
@@ -305,8 +306,10 @@ private:
     std::size_t m_samplesPerPixel;
     mutable std::optional<std::barrier<>> m_renderBarrierMaybe;
     mutable std::atomic<size_t> m_nextTaskIndex;
-    static const size_t s_pixelsPerTask = 8;
     std::atomic<bool> m_timeToExit;
+    mutable std::mutex m_sizeMutex;
+
+    static const size_t s_pixelsPerTask = 8;
 
     std::vector<std::thread> m_threadPool;
 
@@ -316,7 +319,11 @@ private:
         size_t y;
     };
 
-    std::optional<render_task> make_task(size_t taskIndex) const noexcept;
+    static std::optional<render_task> makeTask(
+        size_t taskIndex,
+        size_t width,
+        size_t height
+    ) noexcept;
 
     struct RenderData {
         const Scene* scene;
