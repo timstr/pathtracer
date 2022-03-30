@@ -3,6 +3,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -21,11 +22,41 @@ Color::Color(float _r, float _g, float _b) noexcept
 
 }
 
-ColorBounce::ColorBounce(Color _emitted, Color _attenuation, Vec _direction) noexcept
-    : emitted(_emitted)
-    , attenuation(_attenuation)
-    , direction(_direction) {
-    assert(std::abs(1.0f - direction.norm()) < epsilon);
+Color& Color::operator+=(const Color& other) noexcept {
+    this->r += other.r;
+    this->g += other.g;
+    this->b += other.b;
+    return *this;
+}
+
+Color operator+(const Color& l, const Color& r) noexcept {
+    return Color(
+        l.r + r.r,
+        l.g + r.g,
+        l.b + r.b
+    );
+}
+
+Color operator*(float k, const Color& c) noexcept {
+    return Color(
+        k * c.r,
+        k * c.g,
+        k * c.b
+    );
+}
+
+ColorBounce::ColorBounce(
+    Color emitted,
+    Color attenuation,
+    Vec rayDirection,
+    Vec normal
+) noexcept
+    : emitted(emitted)
+    , attenuation(attenuation)
+    , rayDirection(rayDirection)
+    , normal(normal) {
+    assert(std::abs(1.0f - rayDirection.norm()) < epsilon);
+    assert(std::abs(1.0f - normal.norm()) < epsilon);
     assert(attenuation.r >= 0.0f && attenuation.r <= 1.0f);
     assert(attenuation.g >= 0.0f && attenuation.g <= 1.0f);
     assert(attenuation.b >= 0.0f && attenuation.b <= 1.0f);
@@ -128,17 +159,19 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
         if (v * normal >= 0.0f) {
             // Refraction to outside
             // TODO: diffuse/specular scatter
-            return ColorBounce{
+            return ColorBounce {
                 Color{0.0f, 0.0f, 0.0f}, // TODO: emitted color?
                 Color{1.0f, 1.0f, 1.0f}, // TODO: internal absorption (requires knowing distance traveled)
-                inbound
+                inbound,
+                normal
             };
         } else {
             // Total internal reflection
             return ColorBounce{
                 Color{0.0f, 0.0f, 0.0f}, // HACK: yellow if total internal reflection
                 Color{0.0f, 0.0f, 0.0f}, // TODO: internal absorption (requires knowing distance traveled)
-                bounce(inbound, -normal)
+                bounce(inbound, -normal),
+                normal
             };
         }
     }
@@ -155,7 +188,8 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
             return ColorBounce{
                 m_emittedLuminance,
                 m_reflectedAbsorption,
-                v
+                v,
+                normal
             };
         } else {
             // Specular reflection
@@ -164,7 +198,8 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
             return ColorBounce{
                 m_emittedLuminance,
                 m_reflectedAbsorption,
-                v
+                v,
+                normal
             };
         }
     } else {
@@ -174,7 +209,8 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
         return ColorBounce{
             m_emittedLuminance,
             m_reflectedAbsorption,
-            v
+            v,
+            normal
         };
     }
 
@@ -296,7 +332,6 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
         }
         const auto& [closestPos, hitObj] = *hit;
 
-
         // TODO: overload +=
         ray.pos = closestPos;
         const auto bounce = hitObj->deflectRay(ray);
@@ -306,7 +341,8 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
         assert(bounce.attenuation.r >= 0.0f && bounce.attenuation.r <= 1.0f);
         assert(bounce.attenuation.g >= 0.0f && bounce.attenuation.g <= 1.0f);
         assert(bounce.attenuation.b >= 0.0f && bounce.attenuation.b <= 1.0f);
-        assert(std::abs(1.0f - bounce.direction.norm()) < epsilon);
+        assert(std::abs(1.0f - bounce.rayDirection.norm()) < epsilon);
+
         // TODO: overload operators for Color
         color.r += bounce.emitted.r * attenuation.r;
         color.g += bounce.emitted.g * attenuation.g;
@@ -314,7 +350,7 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
         attenuation.r *= bounce.attenuation.r;
         attenuation.g *= bounce.attenuation.g;
         attenuation.b *= bounce.attenuation.b;
-        ray.dir = bounce.direction;
+        ray.dir = bounce.rayDirection;
 
         if (attenuation.r + attenuation.b + attenuation.g < epsilon) {
             return color;
@@ -499,15 +535,35 @@ Color& Image::operator()(std::size_t x, std::size_t y) noexcept {
     return const_cast<Color&>(const_cast<const Image*>(this)->operator()(x, y));
 }
 
+void Image::fill(const Color& c) noexcept {
+    for (auto& d : m_data) {
+        d = c;
+    }
+}
+
+Image& Image::operator+=(const Image& other) noexcept {
+    assert(m_width == other.m_width);
+    assert(m_height == other.m_height);
+    for (size_t i = 0; i < m_data.size(); ++i) {
+        m_data[i] += other.m_data[i];
+    }
+    return *this;
+}
+
 Renderer::Renderer(std::size_t width, std::size_t height) noexcept
     : m_width(width)
     , m_height(height)
     , m_numBounces(16)
     , m_samplesPerPixel(32)
-    , m_numThreads(std::thread::hardware_concurrency()) {
+    , m_renderBarrierMaybe(std::nullopt)
+    , m_renderData(std::nullopt) {
+
     assert(m_width > 0);
     assert(m_height > 0);
-    assert(m_numThreads > 0);
+}
+
+Renderer::~Renderer() {
+    this->stopThreadPool();
 }
 
 std::size_t Renderer::width() const noexcept {
@@ -526,20 +582,6 @@ std::size_t Renderer::samplesPerPixel() const noexcept {
     return m_samplesPerPixel;
 }
 
-std::size_t Renderer::numThreads() const noexcept {
-    return m_numThreads;
-}
-
-void Renderer::setWidth(std::size_t w) noexcept {
-    assert(w > 0);
-    m_width = w;
-}
-
-void Renderer::setHeight(std::size_t h) noexcept {
-    assert(h > 0);
-    m_height = h;
-}
-
 void Renderer::setNumBounces(std::size_t n) noexcept {
     assert(n > 0);
     m_numBounces = n;
@@ -550,95 +592,152 @@ void Renderer::setSamplesPerPixel(std::size_t s) noexcept {
     m_samplesPerPixel = s;
 }
 
-void Renderer::setNumThreads(std::size_t n) noexcept {
-    assert(n > 0);
-    m_numThreads = n;
+void Renderer::startThreadPool(size_t numThreads) {
+    if (numThreads == 0) {
+        numThreads = std::thread::hardware_concurrency();
+    }
+    std::cout << "Starting thread pool using " << numThreads << " threads"
+        << std::endl;
+    this->stopThreadPool();
+    assert(!m_renderBarrierMaybe.has_value());
+    assert(!m_renderData.has_value());
+    assert(m_threadPool.size() == 0);
+    // NOTE: the current thread must also arrive at the barrier to allow
+    // phase transitions
+    m_renderBarrierMaybe.emplace(numThreads + 1);
+    m_timeToExit.store(false);
+    for (std::size_t i = 0; i < numThreads; ++i) {
+        m_threadPool.emplace_back([this]{ this->doWork(); });
+    }
 }
 
-Image Renderer::render(const Scene& scene, const Camera& camera) const {
-    const auto maxWidth = static_cast<float>(m_width - 1);
-    const auto maxHeight = static_cast<float>(m_height - 1);
-    const auto sppInv = 1.0f / static_cast<float>(m_samplesPerPixel);
+void Renderer::stopThreadPool() {
+    if (m_threadPool.size() == 0) {
+        assert(!m_renderBarrierMaybe.has_value());
+        assert(!m_renderData.has_value());
+        return;
+    }
+    assert(m_renderBarrierMaybe.has_value());
+    assert(m_timeToExit.load() == false);
+    m_timeToExit.store(true);
+    m_renderBarrierMaybe->arrive_and_wait();
+    for (auto& t : m_threadPool) {
+        t.join();
+    }
+    m_threadPool.clear();
+    m_renderBarrierMaybe.reset();
+}
 
-    const auto startTime = std::chrono::steady_clock::now();
+void Renderer::doWork() const noexcept {
+    while (true) {
+        // Phase 1: waiting for work
+        assert(m_renderBarrierMaybe.has_value());
+        m_renderBarrierMaybe->arrive_and_wait();
+        if (m_timeToExit.load()) {
+            return;
+        }
 
-    const auto prettyPrintSeconds = [](std::size_t totalSeconds) {
-        const auto seconds = totalSeconds % 60;
-        const auto minutes = totalSeconds / 60 % 60;
-        const auto hours = totalSeconds / 3600;
-        std::cout
-            << std::setfill('0') << std::setw(2)
-            << hours << ':' << std::setw(2) << minutes << ':' << std::setw(2) << seconds;
-    };
+        // Phase 2: doing the work
+        assert(m_renderData.has_value());
+        const auto& camera = *m_renderData->camera;
+        const auto& scene = *m_renderData->scene;
+        auto& img = *m_renderData->image;
 
-    std::mutex printMutex;
-    std::size_t numRowsCompleted = 0;
-    const auto reportRowCompleted = [&]() {
-        auto lock = std::lock_guard{printMutex};
-        ++numRowsCompleted;
-        const auto pct = static_cast<float>(numRowsCompleted) / static_cast<float>(m_height);
-        const auto totalWidth = 80;
-        const auto progressBarWidth = static_cast<int>(totalWidth * pct);
-        const auto remainingWidth = totalWidth - progressBarWidth;
-        const auto currTime = std::chrono::steady_clock::now();
-        const auto totalSeconds = std::chrono::duration_cast<std::chrono::seconds>(currTime - startTime).count();
-
-        std::cout
-            << "\r["
-            << std::string(progressBarWidth, '=')
-            << std::string(remainingWidth, ' ')
-            << "] "
-            << std::fixed << std::setprecision(2)
-            << std::setfill('0') << std::setw(2)
-            << (pct * 100.0f) << "% - ";
-        prettyPrintSeconds(totalSeconds);
-
-        std::cout.flush();
-    };
-
-    auto img = Image(m_width, m_height);
-
-    const auto doWork = [&](std::size_t yBegin, std::size_t yEnd, std::size_t yStep) {
+        const auto maxWidth = static_cast<float>(m_width - 1);
+        const auto maxHeight = static_cast<float>(m_height - 1);
+        const auto sppInv = 1.0f / static_cast<float>(m_samplesPerPixel);
         const auto deltaX = 1.0f / maxWidth;
         const auto deltaY = 1.0f / maxHeight;
         const auto jitterX = std::uniform_real_distribution<float>{ -0.5f * deltaX, 0.5f * deltaX };
         const auto jitterY = std::uniform_real_distribution<float>{ -0.5f * deltaY, 0.5f * deltaY };
-        for (std::size_t y = yBegin; y < yEnd; y += yStep) {
+        while (true) {
+            const auto taskIndex = m_nextTaskIndex.fetch_add(1);
+            auto taskMaybe = this->make_task(taskIndex);
+            if (!taskMaybe.has_value()) {
+                break;
+            }
+            const auto& task = *taskMaybe;
+            const auto y = task.y;
             const auto py = static_cast<float>(y) / maxHeight;
-            for (std::size_t x = 0; x < m_width; ++x) {
+            for (std::size_t x = task.xStart; x < task.xEnd; ++x) {
                 const auto px = static_cast<float>(x) / maxWidth;
                 auto acc = Color{};
                 for (std::size_t i = 0; i < m_samplesPerPixel; ++i){
                     const auto sx = px + jitterX(randomEngine());
                     const auto sy = py + jitterY(randomEngine());
-                    const auto c = scene.trace(camera.getViewRay(sx, sy), m_numBounces);
+                    const auto viewRay = camera.getViewRay(sx, sy);
+                    const auto c = scene.trace(viewRay, m_numBounces);
                     // TODO: operators
                     acc.r += c.r;
                     acc.g += c.g;
                     acc.b += c.b;
                 }
                 // TODO: operators
-                img(x, y).r = acc.r * sppInv;
-                img(x, y).g = acc.g * sppInv;
-                img(x, y).b = acc.b * sppInv;
+                auto& pixel = img(x, y);
+                pixel.r = acc.r * sppInv;
+                pixel.g = acc.g * sppInv;
+                pixel.b = acc.b * sppInv;
             }
-            reportRowCompleted();
         }
+
+        assert(m_renderBarrierMaybe.has_value());
+        m_renderBarrierMaybe->arrive_and_wait();
+        if (m_timeToExit.load()) {
+            return;
+        }
+    }
+}
+
+std::optional<Renderer::render_task> Renderer::make_task(
+    size_t taskIndex
+) const noexcept {
+    assert(m_renderData.has_value());
+    const auto& imgPtr = m_renderData->image;
+    assert(imgPtr != nullptr);
+    const auto tasksPerRow = imgPtr->width() / s_pixelsPerTask;
+    const auto xStart = s_pixelsPerTask * (taskIndex % tasksPerRow);
+    const auto y = taskIndex / tasksPerRow;
+    if (y >= imgPtr->height()) {
+        return std::nullopt;
+    }
+    const auto xEnd = std::min(
+        xStart + s_pixelsPerTask,
+        imgPtr->width()
+    );
+    return render_task {
+        xStart,
+        xEnd,
+        y
     };
+}
 
-    std::vector<std::thread> workers;
-    for (std::size_t i = 0; i < m_numThreads; ++i) {
-        workers.emplace_back(doWork, i, m_height, m_numThreads);
-    }
-    for (std::size_t i = 0; i < m_numThreads; ++i) {
-        workers[i].join();
+Image Renderer::render(
+    const Scene& scene,
+    const Camera& camera
+) {
+    if (m_threadPool.size() == 0) {
+        this->startThreadPool();
     }
 
-    std::cout << "\nRender completed after ";
-    const auto currTime = std::chrono::steady_clock::now();
-    const auto totalSeconds = std::chrono::duration_cast<std::chrono::seconds>(currTime - startTime).count();
-    prettyPrintSeconds(totalSeconds);
-    std::cout << '\n';
+    auto img = Image(m_width, m_height);
+
+    assert(!m_renderData.has_value());
+    m_renderData.emplace(RenderData{
+        &scene,
+        &camera,
+        &img
+    });
+    m_nextTaskIndex.store(0);
+    assert(m_renderBarrierMaybe.has_value());
+    assert(!m_timeToExit.load());
+    // Phase 1: threads are all waiting at the barrier to start working.
+    // This last thread arriving starts them
+    m_renderBarrierMaybe->arrive_and_wait();
+    // Phase 2: threads are all busy doing work.
+    // When the last thread arrives, all work is done.
+    m_renderBarrierMaybe->arrive_and_wait();
+
+    m_renderData.reset();
 
     return img;
 }
@@ -848,7 +947,7 @@ ColorBounce Object::deflectRay(const Ray& ray) const noexcept {
         inv * ray.pos
     );
     auto deflected = deflectLocalRay(localRay);
-    deflected.direction = transformation() * deflected.direction;
+    deflected.rayDirection = transformation() * deflected.rayDirection;
     return deflected;
 }
 

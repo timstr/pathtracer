@@ -278,21 +278,16 @@ Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
     while (true) {
         auto x = dist(randomEngine());
         auto y = dist(randomEngine());
-        auto z = dist(randomEngine()) * 0.5f + 0.5f;
-        const auto lSqr = x * x + y * y + z * z;
-        if (lSqr > 1.0f || lSqr < epsilon) {
+        auto z = dist(randomEngine());
+        const auto l = std::sqrt(x * x + y * y + z * z);
+        if (l > 1.0f || l < epsilon) {
             continue;
         }
-        const auto l = std::sqrt(lSqr);
-        x /= l;
-        y /= l;
-        z /= l;
-
-        const auto isNormalParallelToX = std::abs(1.0f - std::abs(normal * Vec(1.0f, 0.0f, 0.0f))) < epsilon;
-        const auto aDifferentDirection = isNormalParallelToX ? Vec(0.0f, 1.0f, 0.0f) : Vec(1.0f, 0.0f, 0.0f);
-        Vec v1 = normal ^ aDifferentDirection;
-        Vec v2 = v1 ^ normal;
-        return (x * v1 + y * v2 + z * normal).unit();
+        auto v = Vec(x, y, z);
+        if ((v * normal) <= 0.0) {
+            continue;
+        }
+        return v.unit();
     }
 }
 

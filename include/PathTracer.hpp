@@ -3,19 +3,27 @@
 #include <Geometry.hpp>
 #include <ObjectTree.hpp>
 
+#include <barrier>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <vector>
-
+#include <thread>
 
 class Color {
 public:
     explicit Color(float _r = 0.0f, float _g = 0.0f, float _b = 0.0f) noexcept;
 
+    Color& operator+=(const Color& other) noexcept;
+
     float r;
     float g;
     float b;
 };
+
+Color operator+(const Color& l, const Color& r) noexcept;
+
+Color operator*(float k, const Color& c) noexcept;
 
 // TODO: rename this
 // TODO: add:
@@ -24,11 +32,17 @@ public:
 // TODO: replace color with scalar, add wavelength
 class ColorBounce {
 public:
-    ColorBounce(Color _emitted, Color _attenuation, Vec _direction) noexcept;
+    ColorBounce(
+        Color emitted,
+        Color attenuation,
+        Vec rayDirection,
+        Vec normal
+    ) noexcept;
 
     Color emitted;
     Color attenuation;
-    Vec direction;
+    Vec rayDirection;
+    Vec normal;
 };
 
 // TODO: add an affine transformation to each Object,
@@ -138,7 +152,7 @@ class SphereObject : public Object {
 public:
     Sphere geometry;
     BasicMaterial material;
-    
+
     SphereObject(Sphere _geometry, BasicMaterial _material = {}) noexcept;
 
 private:
@@ -167,7 +181,7 @@ private:
 class FractalObject : public Object {
 public:
     BasicMaterial material;
-    
+
 private:
     std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override;
 
@@ -250,6 +264,10 @@ public:
     const Color& operator()(std::size_t x, std::size_t y) const noexcept;
     Color& operator()(std::size_t x, std::size_t y) noexcept;
 
+    void fill(const Color&) noexcept;
+
+    Image& operator+=(const Image& other) noexcept;
+
 private:
     const std::size_t m_width;
     const std::size_t m_height;
@@ -259,27 +277,56 @@ private:
 class Renderer {
 public:
     Renderer(std::size_t width = 1024, std::size_t height = 1024) noexcept;
+    ~Renderer();
+
+    Renderer(const Renderer&) = delete;
+    Renderer(Renderer&&) = delete;
+    Renderer& operator=(const Renderer&) = delete;
+    Renderer& operator=(Renderer&&) = delete;
 
     std::size_t width() const noexcept;
     std::size_t height() const noexcept;
     std::size_t numBounces() const noexcept;
     std::size_t samplesPerPixel() const noexcept;
-    std::size_t numThreads() const noexcept;
 
-    void setWidth(std::size_t) noexcept;
-    void setHeight(std::size_t) noexcept;
     void setNumBounces(std::size_t) noexcept;
     void setSamplesPerPixel(std::size_t) noexcept;
-    void setNumThreads(std::size_t) noexcept;
 
-    Image render(const Scene&, const Camera&) const;
+    void startThreadPool(size_t numThreads = 0);
+
+    void stopThreadPool();
+
+    Image render(const Scene&, const Camera&);
 
 private:
     std::size_t m_width;
     std::size_t m_height;
     std::size_t m_numBounces;
     std::size_t m_samplesPerPixel;
-    std::size_t m_numThreads;
+    mutable std::optional<std::barrier<>> m_renderBarrierMaybe;
+    mutable std::atomic<size_t> m_nextTaskIndex;
+    static const size_t s_pixelsPerTask = 8;
+    std::atomic<bool> m_timeToExit;
+
+    std::vector<std::thread> m_threadPool;
+
+    struct render_task {
+        size_t xStart;
+        size_t xEnd;
+        size_t y;
+    };
+
+    std::optional<render_task> make_task(size_t taskIndex) const noexcept;
+
+    struct RenderData {
+        const Scene* scene;
+        const Camera* camera;
+        Image* image;
+    };
+
+    std::optional<RenderData> m_renderData;
+
+    void doWork() const noexcept;
 };
 
 class ToneMapper {
