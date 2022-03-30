@@ -1,6 +1,8 @@
 #include <Geometry.hpp>
 #include <RandomNumberGenerator.hpp>
 
+#include <cassert>
+
 namespace {
     constexpr float pi = 3.141592653589793f;
     constexpr float epsilon = 1e-6f;
@@ -21,10 +23,9 @@ float Triangle::area() const noexcept {
     return ((b - a) ^ (c - a)).norm() * 0.5f;
 }
 
-Sphere::Sphere(Pos _center, float _radius) noexcept
-    : center(_center)
-    , radius(_radius) {
-
+Sphere::Sphere(float _radius) noexcept
+    : radius(_radius) {
+    assert(radius > epsilon);
 }
 
 float Sphere::surfaceArea() const noexcept {
@@ -36,25 +37,17 @@ float Sphere::volume() const noexcept {
 }
 
 Vec Sphere::normal(Pos p) const noexcept {
-    return (p - center).unit();
+    return p.toVec().unit();
 }
 
-Box::Box(Pos corner, Pos oppositeCorner) noexcept
-    : center(corner + 0.5f * (oppositeCorner - corner))
-    , halfSize(Vec{
-        0.5f * std::abs(corner.x - oppositeCorner.x),
-        0.5f * std::abs(corner.y - oppositeCorner.y),
-        0.5f * std::abs(corner.z - oppositeCorner.z)
-    }){
+Rectangle::Rectangle(Vec _halfSize) noexcept
+    : halfSize(_halfSize) {
+    assert(halfSize.x >= epsilon);
+    assert(halfSize.y >= epsilon);
+    assert(halfSize.z >= epsilon);
 }
 
-Box::Box(Pos _center, Vec _halfSize) noexcept
-    : center(_center)
-    , halfSize(_halfSize) {
-
-}
-
-float Box::surfaceArea() const noexcept {
+float Rectangle::surfaceArea() const noexcept {
     return 8.0f * (
         halfSize.x * halfSize.y +
         halfSize.x * halfSize.z +
@@ -62,15 +55,14 @@ float Box::surfaceArea() const noexcept {
     );
 }
 
-float Box::volume() const noexcept {
+float Rectangle::volume() const noexcept {
     return halfSize.x * halfSize.y * halfSize.z * 8.0f;
 }
 
-Vec Box::normal(Pos p) const noexcept {
-    const auto q = p - center;
-    const auto ax = std::abs(q.x / halfSize.x);
-    const auto ay = std::abs(q.y / halfSize.y);
-    const auto az = std::abs(q.z / halfSize.z);
+Vec Rectangle::normal(Pos p) const noexcept {
+    const auto ax = std::abs(p.x / halfSize.x);
+    const auto ay = std::abs(p.y / halfSize.y);
+    const auto az = std::abs(p.z / halfSize.z);
 
     const auto sign = [](float v) {
         return v > 0.0f ? 1.0f : -1.0f;
@@ -79,27 +71,39 @@ Vec Box::normal(Pos p) const noexcept {
     if (ax > ay) {
         if (ax > az) {
             // ax > ay and ax > az
-            return Vec{sign(q.x), 0.0f, 0.0f};
+            return Vec{sign(p.x), 0.0f, 0.0f};
         } else {
-            // az > ax > ay
-            return Vec{0.0f, 0.0f, sign(q.z)};
+            // az >= ax > ay
+            return Vec{0.0f, 0.0f, sign(p.z)};
         }
     } else {
         if (ay > az) {
-            // ay > ax and ay > az
-            return Vec{0.0f, sign(q.y), 0.0f};
+            // ay >= ax and ay > az
+            return Vec{0.0f, sign(p.y), 0.0f};
         } else {
-            // az > ay > ax
-            return Vec{0.0f, 0.0f, sign(q.z)};
+            // az >= ay >= ax
+            return Vec{0.0f, 0.0f, sign(p.z)};
         }
     }
 }
 
-Box boxContaining(const Box& a, const Box& b) noexcept {
+AxisAlignedBox boxContaining(const AxisAlignedBox& a, const AxisAlignedBox& b) noexcept {
+    assert(a.halfSize.x > 0.0f);
+    assert(a.halfSize.y > 0.0f);
+    assert(a.halfSize.z > 0.0f);
+    assert(b.halfSize.x > 0.0f);
+    assert(b.halfSize.y > 0.0f);
+    assert(b.halfSize.z > 0.0f);
     const auto aBegin = a.center - a.halfSize;
     const auto aEnd = a.center + a.halfSize;
     const auto bBegin = b.center - b.halfSize;
     const auto bEnd = b.center + b.halfSize;
+    assert(aBegin.x < aEnd.x);
+    assert(aBegin.y < aEnd.y);
+    assert(aBegin.z < aEnd.z);
+    assert(bBegin.x < bEnd.x);
+    assert(bBegin.y < bEnd.y);
+    assert(bBegin.z < bEnd.z);
     const auto p0 = Pos{
         std::min(aBegin.x, bBegin.x),
         std::min(aBegin.y, bBegin.y),
@@ -110,14 +114,21 @@ Box boxContaining(const Box& a, const Box& b) noexcept {
         std::max(aEnd.y, bEnd.y),
         std::max(aEnd.z, bEnd.z),
     };
-    return Box{p0, p1};
+    const auto bb = AxisAlignedBox{p0, p1};
+    // assert(inside(aBegin, bb));
+    // assert(inside(aEnd,   bb));
+    // assert(inside(bBegin, bb));
+    // assert(inside(bEnd,   bb));
+    // assert(!inside(aBegin - 0.1f * a.halfSize, bb) || !inside(bBegin - 0.1f * b.halfSize, bb));
+    // assert(!inside(aEnd   + 0.1f * a.halfSize, bb) || !inside(bEnd   + 0.1f * b.halfSize, bb));
+    return bb;
 }
 
 Vec bounce(const Vec& inbound, const Vec& normal) noexcept {
     return inbound - (2.0f * ((inbound * normal) * normal));
 }
 
-std::optional<float> intersect(const Ray& ray, const Triangle& triangle) noexcept {
+std::optional<Pos> intersect(const Ray& ray, const Triangle& triangle) noexcept {
     // https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
     const auto edge1 = triangle.b - triangle.a;
     const auto edge2 = triangle.c - triangle.a;
@@ -139,16 +150,16 @@ std::optional<float> intersect(const Ray& ray, const Triangle& triangle) noexcep
     }
     const auto t = f * (edge2 * q);
     if (t > epsilon) {
-        return t;
+        return ray.pos + t * ray.dir;
     }
     return std::nullopt;
 }
 
-std::optional<float> intersect(const Ray& ray, const Sphere& sphere) noexcept {
+std::optional<Pos> intersect(const Ray& ray, const Sphere& sphere) noexcept {
     // https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
     const auto a = ray.dir.normSquared();
-    const auto b = 2.0f * (ray.dir * (ray.pos - sphere.center));
-    const auto c = (ray.pos - sphere.center).normSquared() - (sphere.radius * sphere.radius);
+    const auto b = 2.0f * (ray.dir * ray.pos.toVec());
+    const auto c = ray.pos.toVec().normSquared() - (sphere.radius * sphere.radius);
     const auto disc = b * b - 4.0f * a * c;
     if (disc <= 0.0) {
         return std::nullopt;
@@ -157,31 +168,37 @@ std::optional<float> intersect(const Ray& ray, const Sphere& sphere) noexcept {
     const auto t0 = (-b - sqrtDisc) / (2.0f * a);
     const auto t1 = (-b + sqrtDisc) / (2.0f * a);
     const auto eps= 1e-3f;
+    auto t = float{};
     if (t0 > eps) {
         if (t1 > eps) {
-            return std::min(t0, t1);
+            t = std::min(t0, t1);
+        } else {
+            t = t0;
         }
-        return t0;
     } else {
         if (t1 > eps) {
-            return t1;
+            t = t1;
+        } else {
+            return std::nullopt;
         }
-        return std::nullopt;
     }
+    return ray.pos + t * ray.dir;
 }
 
-std::optional<float> intersect(const Ray& ray, const Box& box) noexcept {
+std::optional<Pos> intersect(const Ray& ray, const Rectangle& box) noexcept {
     auto closestT = std::optional<float>{};
-    
+
     const auto recordClosest = [&](float t) {
         closestT = closestT.has_value() ? std::min(*closestT, t) : t;
     };
 
     // negative-facing corner of box, relative to ray origin
-    const auto bBegin = box.center - box.halfSize - ray.pos;
+    const auto bBegin = -ray.pos.toVec() - box.halfSize;
 
     // positive-facing corner of box, relative to ray origin
-    const auto bEnd = box.center + box.halfSize - ray.pos;
+    const auto bEnd = -ray.pos.toVec() + box.halfSize;
+
+    // ray is now at origin
 
     using Dimension = const float Vec::*;
 
@@ -213,19 +230,34 @@ std::optional<float> intersect(const Ray& ray, const Box& box) noexcept {
     projectAlongDim(&Vec::z, bBegin);
     projectAlongDim(&Vec::z, bEnd);
 
-    return closestT;
+    if (!closestT.has_value()) {
+        return std::nullopt;
+    }
+    return ray.pos + ((*closestT) * ray.dir);
+}
+
+std::optional<Pos> intersect(const Ray& ray, const AxisAlignedBox& b) noexcept {
+    auto r = Ray(ray.dir, ray.pos - b.center.toVec());
+    auto p = intersect(r, Rectangle{b.halfSize});
+    if (!p.has_value()) {
+        return std::nullopt;
+    }
+    return (*p) + b.center.toVec();
 }
 
 bool inside(const Pos& p, const Sphere& s) noexcept {
-    return (s.center - p).normSquared() <= (s.radius * s.radius);
+    return p.toVec().normSquared() <= (s.radius * s.radius);
 }
 
-bool inside(const Pos& p, const Box& b) noexcept {
-    const auto q = p - b.center;
+bool inside(const Pos& p, const Rectangle& b) noexcept {
     return
-        (std::abs(q.x) < b.halfSize.x) &&
-        (std::abs(q.y) < b.halfSize.y) &&
-        (std::abs(q.z) < b.halfSize.z);
+        (std::abs(p.x) <= b.halfSize.x) &&
+        (std::abs(p.y) <= b.halfSize.y) &&
+        (std::abs(p.z) <= b.halfSize.z);
+}
+
+bool inside(const Pos& p, const AxisAlignedBox& b) noexcept {
+    return inside(p - b.center.toVec(), Rectangle{b.halfSize});
 }
 
 std::pair<float, float> randomPointInCircle() noexcept {
@@ -241,21 +273,24 @@ std::pair<float, float> randomPointInCircle() noexcept {
 }
 
 Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
+    normal = normal.unit();
     const auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
     while (true) {
         auto x = dist(randomEngine());
         auto y = dist(randomEngine());
         auto z = dist(randomEngine()) * 0.5f + 0.5f;
-        const auto l = std::sqrt(x * x + y * y + z * z);
-        if (l > 1.0f || l < epsilon) {
+        const auto lSqr = x * x + y * y + z * z;
+        if (lSqr > 1.0f || lSqr < epsilon) {
             continue;
         }
+        const auto l = std::sqrt(lSqr);
         x /= l;
         y /= l;
         z /= l;
 
-        const auto normalParallelToX = std::abs(1.0f - normal * Vec(1.0f, 0.0f, 0.0f)) < epsilon;
-        Vec v1 = normal ^ (normalParallelToX ? Vec(0.0f, 1.0f, 0.0f) : Vec(1.0f, 0.0f, 0.0f));
+        const auto isNormalParallelToX = std::abs(1.0f - std::abs(normal * Vec(1.0f, 0.0f, 0.0f))) < epsilon;
+        const auto aDifferentDirection = isNormalParallelToX ? Vec(0.0f, 1.0f, 0.0f) : Vec(1.0f, 0.0f, 0.0f);
+        Vec v1 = normal ^ aDifferentDirection;
         Vec v2 = v1 ^ normal;
         return (x * v1 + y * v2 + z * normal).unit();
     }
@@ -264,4 +299,24 @@ Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
 Ray::Ray(Vec _direction, Pos _position) noexcept
     : dir(_direction)
     , pos(_position) {
+}
+
+AxisAlignedBox::AxisAlignedBox(Pos corner, Pos oppositeCorner) noexcept
+    : center(corner + 0.5f * (oppositeCorner - corner))
+    , halfSize(Vec{
+        0.5f * std::abs(corner.x - oppositeCorner.x),
+        0.5f * std::abs(corner.y - oppositeCorner.y),
+        0.5f * std::abs(corner.z - oppositeCorner.z)
+    }) {
+    assert(halfSize.x >= epsilon);
+    assert(halfSize.y >= epsilon);
+    assert(halfSize.z >= epsilon);
+}
+
+AxisAlignedBox::AxisAlignedBox(Pos _center, Vec _halfSize) noexcept
+    : center(_center)
+    , halfSize(_halfSize) {
+    assert(halfSize.x >= epsilon);
+    assert(halfSize.y >= epsilon);
+    assert(halfSize.z >= epsilon);
 }

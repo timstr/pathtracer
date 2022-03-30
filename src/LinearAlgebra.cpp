@@ -36,6 +36,10 @@ Vec Vec::abs() const noexcept {
     };
 }
 
+Pos Vec::toPos() const noexcept {
+    return Pos{x, y, z};
+}
+
 Pos::Pos(float _x, float _y, float _z) noexcept
     : x(_x)
     , y(_y)
@@ -216,6 +220,14 @@ Affine Affine::Translation(const Vec& t) noexcept {
 
 Affine Affine::Translation(float x, float y, float z) noexcept {
     return Translation(Vec{ x, y, z });
+}
+
+std::optional<Affine> Affine::inverse() const noexcept {
+    auto linv = linear.inverse();
+    if (!linv.has_value()) {
+        return std::nullopt;
+    }
+    return (*linv) * Affine::Translation(-translation);
 }
 
 Vec operator-(const Vec& v) noexcept {

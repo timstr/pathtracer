@@ -1,2 +1,5 @@
-build
-.vs
+build/
+.vs/
+.vscode/
+output/
+results/

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10.0)
 
 project(pathtracer CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 
 set(SFML_STATIC_LIBRARIES TRUE)
 find_package(SFML 2.4 COMPONENTS system window graphics audio main REQUIRED)

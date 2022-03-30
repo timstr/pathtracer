@@ -7,7 +7,7 @@
 namespace ObjectTree {
 
 
-    Node::Node(Box bb) noexcept
+    Node::Node(AxisAlignedBox bb) noexcept
         : boundingBox(bb) {
 
     }
@@ -19,39 +19,58 @@ namespace ObjectTree {
 
     }
 
-    std::optional<std::pair<float, const Object*>> InternalNode::hit(const Ray& ray) const noexcept {
-        const auto ta = intersect(ray, m_childA->boundingBox);
-        const auto tb = intersect(ray, m_childB->boundingBox);
-        if (ta.has_value()) {
-            if (tb.has_value()) {
-                const auto aIsCloser = *ta < *tb;
+    std::optional<std::pair<Pos, const Object*>> InternalNode::hit(const Ray& ray) const noexcept {
+        const auto pa = intersect(ray, m_childA->boundingBox);
+        const auto pb = intersect(ray, m_childB->boundingBox);
+        if (pa.has_value()) {
+            // Bounding box A was hit
+            const auto ta = ((*pa) - ray.pos) * ray.dir;
+            assert(ta >= 0.0f);
+            if (pb.has_value()) {
+                // Bounding box B was hit
+                const auto tb = ((*pb) - ray.pos) * ray.dir;
+                assert(tb >= 0.0f);
+
+                const auto aIsCloser = ta < tb;
                 const auto& near = aIsCloser ? m_childA : m_childB;
                 const auto& far = aIsCloser ? m_childB : m_childA;
 
-                const auto c = near->hit(ray);
-                if (c.has_value()) {
-                    const auto p = ray.pos + c->first * ray.dir;
-                    if (inside(p, far->boundingBox)) {
-                        const auto c2 = far->hit(ray);
-                        if (c2.has_value() && c2->first < c->first) {
-                            return c2;
+                const auto pn = near->hit(ray);
+                if (pn.has_value()) {
+                    // near object was hit
+                    assert(inside(pn->first, near->boundingBox));
+                    // NOTE: because both objects' bounding boxes intercept the ray, both need to be fully checked
+                    // near object is also inside far bounding box, so far object might also be hit
+                    const auto pf = far->hit(ray);
+                    if (pf.has_value()) {
+                        assert(inside(pf->first, far->boundingBox));
+                        // far object was hit
+                        const auto cn = (pn->first - ray.pos) * ray.dir;
+                        const auto cf = (pf->first - ray.pos) * ray.dir;
+                        assert(cn >= 0.0f);
+                        assert(cf >= 0.0f);
+                        if (cf < cn) {
+                            // far object is closer than near object
+                            return pf;
                         }
                     }
-
-                    return c;
+                    return pn;
+                } else {
+                    // Near object was not hit
+                    return far->hit(ray);
                 }
-                return far->hit(ray);
             } else {
+                // Bounding box A was hit but bounding box B was not hit
                 return m_childA->hit(ray);
             }
         } else {
-            if (tb.has_value()) {
+            // Bounding box A was not hit
+            if (pb.has_value()) {
                 return m_childB->hit(ray);
             } else {
                 return std::nullopt;
             }
         }
-        
     }
 
     LeafNode::LeafNode(const Object* object) noexcept
@@ -60,10 +79,10 @@ namespace ObjectTree {
 
     }
 
-    std::optional<std::pair<float, const Object*>> LeafNode::hit(const Ray& ray) const noexcept {
-        const auto t = m_object->hit(ray);
-        if (t.has_value()) {
-            return std::pair{ *t, m_object };
+    std::optional<std::pair<Pos, const Object*>> LeafNode::hit(const Ray& ray) const noexcept {
+        const auto p = m_object->hitRay(ray);
+        if (p.has_value()) {
+            return std::pair{ *p, m_object };
         }
         return std::nullopt;
     }
@@ -74,7 +93,7 @@ namespace ObjectTree {
 
     }
 
-    std::optional<std::pair<float, const Object*>> Tree::hit(const Ray& ray) const noexcept {
+    std::optional<std::pair<Pos, const Object*>> Tree::hit(const Ray& ray) const noexcept {
         assert(m_root);
         return m_root->hit(ray);
     }
@@ -101,15 +120,15 @@ namespace ObjectTree {
         auto bestSplitDim = Dimension{nullptr};
         auto bestSplitIndex = std::optional<std::size_t>{};
         auto bestCost = std::numeric_limits<float>::max();
-
+        
         const auto computeBestSplit = [&](Dimension dim) {
             for (std::size_t i = 1; i < objects.size(); ++i) {
                 const auto bb = objects[i]->getBoundingBox();
                 const auto m = bb.center.*dim;
 
                 // Bounding boxes containing partitions about current object
-                auto bba = std::optional<Box>{};
-                auto bbb = std::optional<Box>{};
+                auto bba = std::optional<AxisAlignedBox>{}; 
+                auto bbb = std::optional<AxisAlignedBox>{};
 
                 for (std::size_t j = 0; j < objects.size(); ++j) {
                     const auto bb2 = objects[j]->getBoundingBox();
@@ -126,8 +145,13 @@ namespace ObjectTree {
                     continue;
                 }
 
-                const auto vInner = bba->volume() + bbb->volume();
-                const auto vTotal = boxContaining(*bba, *bbb).volume();
+                const auto va = Rectangle{bba->halfSize}.volume();
+                const auto vb = Rectangle{bbb->halfSize}.volume();
+                assert(va > 1e-6f);
+                assert(vb > 1e-6f);
+                const auto vInner = va + vb;
+                const auto vTotal = Rectangle{boxContaining(*bba, *bbb).halfSize}.volume();
+                assert(vTotal > 1e-6f);
                 const auto volumeCost = vInner / vTotal;
 
                 const auto splitRatio = static_cast<float>(i) / static_cast<float>(objects.size() - i);
@@ -147,8 +171,9 @@ namespace ObjectTree {
         computeBestSplit(&Pos::z);
         computeBestSplit(&Pos::y);
 
+        assert((bestSplitDim == nullptr) != bestSplitIndex.has_value());
+        // TODO: fall-back in case objects are co-located
         assert(bestSplitDim != nullptr);
-        assert(bestSplitIndex.has_value());
 
         auto splitA = std::vector<const Object*>{};
         auto splitB = std::vector<const Object*>{};
@@ -161,11 +186,12 @@ namespace ObjectTree {
             const auto m2 = bb2.center.*bestSplitDim;
             (m2 < m ? splitA : splitB).push_back(o);
         }
+        // TODO: fall-back partition in case splitting failed
 
         return std::make_unique<InternalNode>(
             makeTree(splitA, volumeVersusSplitCost),
             makeTree(splitB, volumeVersusSplitCost)
-            );
+        );
     }
 
 

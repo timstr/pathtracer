@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <optional>
 
+class Pos;
+
 class Vec {
 public:
     float x;
@@ -19,6 +21,8 @@ public:
     Vec unit() const noexcept;
 
     Vec abs() const noexcept;
+
+    Pos toPos() const noexcept;
 };
 
 class Pos {
@@ -82,6 +86,8 @@ public:
     static Affine Translation(const Vec&) noexcept;
     static Affine Translation(float x, float y, float z) noexcept;
 
+    std::optional<Affine> inverse() const noexcept;
+
     Linear linear;
     Vec translation;
 };
@@ -100,11 +106,11 @@ Vec operator/(const Vec& v, float t) noexcept;
 Vec operator+(const Vec& u, const Vec& v) noexcept;
 Vec operator-(const Vec& u, const Vec& v) noexcept;
 
-// vector-postd::size_t addition
+// vector-pos addition
 Pos operator+(const Pos& p, const Vec& v) noexcept;
 Pos operator+(const Vec& v, const Pos& p) noexcept;
 
-// vector-postd::size_t subtraction
+// vector-pos subtraction
 Pos operator-(const Pos& p, const Vec& v) noexcept;
 
 // position-position subtraction
@@ -133,7 +139,7 @@ Linear operator/(const Linear& A, float t) noexcept;
 // linear-vector multiplication
 Vec operator*(const Linear& A, const Vec& v) noexcept;
 
-// linear-postd::size_t multiplication
+// linear-pos multiplication
 Pos operator*(const Linear& A, const Pos& v) noexcept;
 
 // linear-linear multiplication
@@ -142,7 +148,7 @@ Linear operator*(const Linear& A, const Linear& B) noexcept;
 // affine-vector multiplication
 Vec operator*(const Affine& T, const Vec& v);
 
-// affine-postd::size_t multiplication
+// affine-pos multiplication
 Pos operator*(const Affine& T, const Pos& p);
 
 // affine-linear multiplication

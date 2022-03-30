@@ -39,13 +39,19 @@ class Object {
 public:
     virtual ~Object() noexcept = default;
 
+    const Affine& transformation() const noexcept;
+    const std::optional<Affine>& inverseTransformation() const noexcept;
+    void setTransformation(const Affine&) noexcept;
+
+    // TODO: think about the normal matrix
+
     // If the object hits the ray, returns the t-value along the ray
     // at which the object hits. The point of collision is the ray's
     // position plus t times the ray's direction. This function need
     // not be deterministic, and may return randomly distributed values
     // to allow effects like subsurface scattering, volumetric rendering,
     // and other creative noisy effects
-    virtual std::optional<float> hit(const Ray& ray) const noexcept = 0;
+    std::optional<Pos> hitRay(const Ray& ray) const noexcept;
 
     // Given a ray whose position is given by a previous call to hit (see above),
     // returns:
@@ -58,11 +64,22 @@ public:
     // This should be general enough to account for glossy surfaces, geometric primitives,
     // non-trivial geometric objects, refractive objects, partially transparent objects with
     // sub-surface scattering, volumetric objects like smoke, and weird light-deflecting media
-    virtual ColorBounce deflect(const Ray& ray) const noexcept = 0;
+    ColorBounce deflectRay(const Ray& ray) const noexcept;
+
+    AxisAlignedBox getBoundingBox() const noexcept;
+
+protected:
+    virtual std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept = 0;
+
+    virtual ColorBounce deflectLocalRay(const Ray& ray) const noexcept = 0;
 
     // Returns the (ideally smallest) axis-aligned rectangle that fully contains the object
     // This will be recomputed for every render
-    virtual Box getBoundingBox() const noexcept = 0;
+    virtual AxisAlignedBox getLocalBoundingBox() const noexcept = 0;
+
+private:
+    Affine m_transformation;
+    std::optional<Affine> m_inverseTransformation;
 };
 
 class BasicMaterial {
@@ -110,11 +127,11 @@ public:
 
     TriangleObject(Triangle _geometry, BasicMaterial _material = {});
 
-    std::optional<float> hit(const Ray& ray) const noexcept override;
+    std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override;
 
-    ColorBounce deflect(const Ray& ray) const noexcept override;
+    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override;
 
-    Box getBoundingBox() const noexcept override;
+    AxisAlignedBox getLocalBoundingBox() const noexcept override;
 };
 
 class SphereObject : public Object {
@@ -124,36 +141,39 @@ public:
     
     SphereObject(Sphere _geometry, BasicMaterial _material = {}) noexcept;
 
-    std::optional<float> hit(const Ray& ray) const noexcept override;
+private:
+    std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override;
 
-    ColorBounce deflect(const Ray& ray) const noexcept override;
+    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override;
 
-    Box getBoundingBox() const noexcept override;
+    AxisAlignedBox getLocalBoundingBox() const noexcept override;
 };
 
 class BoxObject : public Object {
 public:
-    Box geometry;
+    Rectangle geometry;
     BasicMaterial material;
 
-    BoxObject(Box _geometry, BasicMaterial _material = {}) noexcept;
+    BoxObject(Rectangle _geometry, BasicMaterial _material = {}) noexcept;
 
-    std::optional<float> hit(const Ray& ray) const noexcept override;
+private:
+    std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override;
 
-    ColorBounce deflect(const Ray& ray) const noexcept override;
+    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override;
 
-    Box getBoundingBox() const noexcept override;
+    AxisAlignedBox getLocalBoundingBox() const noexcept override;
 };
 
 class FractalObject : public Object {
 public:
     BasicMaterial material;
     
-    std::optional<float> hit(const Ray& ray) const noexcept override;
+private:
+    std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override;
 
-    ColorBounce deflect(const Ray& ray) const noexcept override;
+    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override;
 
-    Box getBoundingBox() const noexcept override;
+    AxisAlignedBox getLocalBoundingBox() const noexcept override;
 
 private:
     float signedDistance(const Pos&) const noexcept;
@@ -164,6 +184,14 @@ public:
     Scene();
 
     void addObject(std::unique_ptr<Object> object) noexcept;
+
+    template<typename T, typename... Args>
+    T& addObject(Args&&... args) {
+        auto up = std::make_unique<T>(std::forward<Args>(args)...);
+        auto& r = *up;
+        addObject(std::move(up));
+        return r;
+    }
 
     Color trace(Ray ray, std::size_t depth) const noexcept;
 
@@ -215,6 +243,9 @@ public:
 
     std::size_t width() const noexcept;
     std::size_t height() const noexcept;
+
+    void save(const std::string& path) const;
+    static Image load(const std::string& path);
 
     const Color& operator()(std::size_t x, std::size_t y) const noexcept;
     Color& operator()(std::size_t x, std::size_t y) noexcept;
