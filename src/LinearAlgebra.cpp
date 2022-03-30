@@ -11,7 +11,7 @@ Vec::Vec(float _x, float _y, float _z) noexcept
     : x(_x)
     , y(_y)
     , z(_z) {
-    
+
 }
 
 float Vec::norm() const noexcept {
@@ -34,6 +34,20 @@ Vec Vec::abs() const noexcept {
         std::abs(y),
         std::abs(z),
     };
+}
+
+Vec& Vec::operator-=(const Vec& other) noexcept {
+    this->x -= other.x;
+    this->y -= other.y;
+    this->z -= other.z;
+    return *this;
+}
+
+Vec& Vec::operator+=(const Vec& other) noexcept {
+    this->x += other.x;
+    this->y += other.y;
+    this->z += other.z;
+    return *this;
 }
 
 Pos::Pos(float _x, float _y, float _z) noexcept
@@ -198,6 +212,11 @@ std::optional<Linear> Linear::inverse() const noexcept {
         B, E, H,
         C, F, I
     ) / det;
+}
+
+Linear& Linear::operator*=(const Linear& other) noexcept {
+    m_data = ((*this) * other).m_data;
+    return *this;
 }
 
 Affine::Affine(const Linear& _linear) noexcept

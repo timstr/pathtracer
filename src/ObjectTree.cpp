@@ -165,7 +165,7 @@ namespace ObjectTree {
         return std::make_unique<InternalNode>(
             makeTree(splitA, volumeVersusSplitCost),
             makeTree(splitB, volumeVersusSplitCost)
-            );
+        );
     }
 
 

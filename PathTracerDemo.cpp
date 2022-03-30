@@ -3,7 +3,11 @@
 
 #include <SFML/Graphics.hpp>
 
+#include <cassert>
+#include <ctime>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 
 class InfiniteLightSource : public Object {
 public:
@@ -27,29 +31,31 @@ public:
                 color.b * k
             },
             Color{0.0f, 0.0f, 0.0f},
+            ray.dir,
             ray.dir
         };
     }
 };
 
-void saveImage(const Image& rendered, const std::string& path) {
-    auto img = sf::Image();
-    img.create(
-        static_cast<unsigned int>(rendered.width()),
-        static_cast<unsigned int>(rendered.height())
+void copyToSFImage(const Image& src, sf::Image& dst, float k) {
+    auto s = dst.getSize();
+    if (s.x != src.width() || s.y != src.height()) {
+        dst.create(
+            static_cast<unsigned int>(src.width()),
+            static_cast<unsigned int>(src.height())
     );
-    for (unsigned x = 0; x < rendered.width(); ++x) {
-        for (unsigned y = 0; y < rendered.height(); ++y) {
-            auto color = rendered(x, y);
+    }
+    for (unsigned x = 0; x < src.width(); ++x) {
+        for (unsigned y = 0; y < src.height(); ++y) {
+            auto color = k * src(x, y);
             auto px = sf::Color(
                 static_cast<std::uint8_t>(std::clamp(color.r, 0.0f, 1.0f) * 255.0f),
                 static_cast<std::uint8_t>(std::clamp(color.g, 0.0f, 1.0f) * 255.0f),
                 static_cast<std::uint8_t>(std::clamp(color.b, 0.0f, 1.0f) * 255.0f)
             );
-            img.setPixel(x, y, px);
+            dst.setPixel(x, y, px);
         }
     }
-    img.saveToFile(path);
 }
 
 int main() {
@@ -224,11 +230,9 @@ int main() {
     c.setTransform(T);
 
     auto r = Renderer{512, 512};
-    // r.setNumThreads(1);
+    r.startThreadPool();
     r.setNumBounces(16);
-    r.setSamplesPerPixel(1024);
-
-    std::cout << "Using " << r.numThreads() << " threads\n";
+    r.setSamplesPerPixel(1);
 
     /*
     {
@@ -244,15 +248,110 @@ int main() {
     std::cout << "High resolution version\n";
     */
 
-    {
-        auto rendered = r.render(s, c);
+    auto window = sf::RenderWindow(
+        sf::VideoMode(
+            static_cast<unsigned int>(r.width()),
+            static_cast<unsigned int>(r.height())
+        ),
+        "Path Tracer"
+    );
 
-        //auto tm = ReinhardToneMapper();
-        //auto toneMapped = tm(rendered);
+    auto img = sf::Image();
+    auto tex = sf::Texture();
+    tex.create(
+        static_cast<unsigned int>(r.width()),
+        static_cast<unsigned int>(r.height())
+    );
+    auto spr = sf::Sprite();
+    // spr.setScale(sf::Vector2f(
+    //     static_cast<float>(r.width()),
+    //     static_cast<float>(r.height())
+    // ));
+    spr.setTexture(tex);
 
-        saveImage(rendered, "output.png");
+    auto acc = Image(r.width(), r.height());
+    auto count = size_t{0};
+
+    auto running = true;
+    while (running) {
+        auto event = sf::Event{};
+        bool resetAcc = false;
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed) {
+                running = false;
+            } else if (event.type == sf::Event::KeyPressed) {
+                auto delta = Vec(0.0f, 0.0f, 0.0f);
+                switch (event.key.code) {
+                    case sf::Keyboard::Key::A: delta.x -= 1.0f; break;
+                    case sf::Keyboard::Key::D: delta.x += 1.0f; break;
+                    case sf::Keyboard::Key::S: delta.z -= 1.0f; break;
+                    case sf::Keyboard::Key::W: delta.z += 1.0f; break;
+                    case sf::Keyboard::Key::Q: delta.y -= 1.0f; break;
+                    case sf::Keyboard::Key::E: delta.y += 1.0f; break;
+                    case sf::Keyboard::Key::Dash:
+                        if (event.key.control) {
+                            c.setFocalBlurRadius(c.focalBlurRadius() - 0.1f);
+                        } else {
+                            c.setFieldOfView(c.fieldOfView() + 1.0f);
+                        }
+                        resetAcc = true;
+                        break;
+                    case sf::Keyboard::Key::Equal:
+                        if (event.key.control) {
+                            c.setFocalBlurRadius(c.focalBlurRadius() + 0.1f);
+                        } else {
+                            c.setFieldOfView(c.fieldOfView() - 1.0f);
+                        }
+                        resetAcc = true;
+                        break;
+                    case sf::Keyboard::Key::Enter: {
+                        auto now = std::time(nullptr);
+                        auto tm = *std::localtime(&now);
+                        auto ss = std::ostringstream{};
+                        ss << "image "
+                            << std::put_time(&tm, "%Y-%m-%d %H-%M-%S")
+                            << ".png";
+                        const auto path = ss.str();
+                        img.saveToFile(path);
+                        std::cout << "Saved image to \"" << path
+                            << '\"' << std::endl;
+                    }
+                }
+                if (delta.norm() > 1e-3f) {
+                    auto& t = c.transform();
+                    if (event.key.control) {
+                        c.setFocalDistance(c.focalDistance() + 0.25f * delta.z);
+                    } else if (event.key.shift) {
+                        const auto k = 3.141592654f * 0.025f;
+                        t.linear *= (
+                            Linear::RotationX(k * delta.x)
+                            * Linear::RotationY(k * delta.y)
+                            * Linear::RotationZ(k * delta.z)
+                        );
+                    } else {
+                        t.translation += 0.1f * t.linear * delta;
+                    }
+                    resetAcc = true;
+                }
+            }
+        }
+        if (!running) {
+            break;
+        }
+        if (resetAcc) {
+            acc.fill(Color(0.0f, 0.0f, 0.0f));
+            count = 0;
     }
 
+        auto rendered = r.render(s, c);
+        acc += rendered;
+        count += 1;
+        copyToSFImage(acc, img, 1.0f / static_cast<float>(count));
+        tex.loadFromImage(img);
+        window.clear();
+        window.draw(spr);
+        window.display();
+    }
 
     return 0;
 }

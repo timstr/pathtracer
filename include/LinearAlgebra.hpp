@@ -19,6 +19,10 @@ public:
     Vec unit() const noexcept;
 
     Vec abs() const noexcept;
+
+    Vec& operator-=(const Vec& other) noexcept;
+
+    Vec& operator+=(const Vec& other) noexcept;
 };
 
 class Pos {
@@ -68,6 +72,8 @@ public:
     float determinant() const noexcept;
 
     std::optional<Linear> inverse() const noexcept;
+
+    Linear& operator*=(const Linear& other) noexcept;
 
 private:
     std::array<float, 9> m_data;
