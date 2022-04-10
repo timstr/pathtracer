@@ -374,7 +374,7 @@ void Scene::updateGeometry() {
 }
 
 
-PerspectiveCamera::PerspectiveCamera(Affine transform, float aspectRatio, float fieldOfView) noexcept
+Camera::Camera(Affine transform, float aspectRatio, float fieldOfView) noexcept
     : m_transform(transform)
     , m_aspectRatio(aspectRatio)
     , m_fieldOfView(fieldOfView)
@@ -383,55 +383,55 @@ PerspectiveCamera::PerspectiveCamera(Affine transform, float aspectRatio, float 
 
 }
 
-const Affine& PerspectiveCamera::transform() const noexcept {
+const Affine& Camera::transform() const noexcept {
     return m_transform;
 }
 
-Affine& PerspectiveCamera::transform() noexcept {
+Affine& Camera::transform() noexcept {
     return m_transform;
 }
 
-float PerspectiveCamera::aspectRatio() const noexcept {
+float Camera::aspectRatio() const noexcept {
     return m_aspectRatio;
 }
 
-float PerspectiveCamera::fieldOfView() const noexcept {
+float Camera::fieldOfView() const noexcept {
     return m_fieldOfView;
 }
 
-float PerspectiveCamera::focalDistance() const noexcept {
+float Camera::focalDistance() const noexcept {
     return m_focalDistance;
 }
 
-float PerspectiveCamera::focalBlurRadius() const noexcept {
+float Camera::focalBlurRadius() const noexcept {
     return m_focalBlurRadius;
 }
 
-void PerspectiveCamera::setTransform(Affine t) noexcept {
+void Camera::setTransform(Affine t) noexcept {
     m_transform = t;
 }
 
-void PerspectiveCamera::setAspectRatio(float r) noexcept {
+void Camera::setAspectRatio(float r) noexcept {
     assert(r > 0.0f);
     m_aspectRatio = r;
 }
 
-void PerspectiveCamera::setFieldOfView(float fov) noexcept {
+void Camera::setFieldOfView(float fov) noexcept {
     assert(fov > -180.0f && fov < 180.0f);
     m_fieldOfView = fov;
 }
 
-void PerspectiveCamera::setFocalDistance(float d) noexcept {
+void Camera::setFocalDistance(float d) noexcept {
     assert(d > 0.0f);
     m_focalDistance = d;
 }
 
-void PerspectiveCamera::setFocalBlurRadius(float r) noexcept {
+void Camera::setFocalBlurRadius(float r) noexcept {
     assert(r >= 0.0f);
     m_focalBlurRadius = r;
 }
 
-Ray PerspectiveCamera::getViewRay(float screenX, float screenY) const noexcept {
+Ray Camera::getViewRay(float screenX, float screenY) const noexcept {
     const auto x = screenX * 2.0f - 1.0f;
     const auto y = screenY * 2.0f - 1.0f;
     const auto sp = m_aspectRatio > 1.0f ? Pos(x, y / m_aspectRatio) : Pos(x * m_aspectRatio, y);
@@ -550,54 +550,58 @@ Image& Image::operator+=(const Image& other) noexcept {
     return *this;
 }
 
-Renderer::Renderer(std::size_t width, std::size_t height) noexcept
+RenderSettings::RenderSettings(std::size_t width, std::size_t height) noexcept
     : m_width(width)
     , m_height(height)
-    , m_numBounces(16)
-    , m_samplesPerPixel(32)
-    , m_renderBarrierMaybe(std::nullopt)
-    , m_renderData(std::nullopt) {
+    , m_numBounces(8)
+    , m_samplesPerPixel(1) {
 
     assert(m_width > 0);
     assert(m_height > 0);
+
 }
 
-Renderer::~Renderer() {
-    this->stopThreadPool();
-}
-
-std::size_t Renderer::width() const noexcept {
+std::size_t RenderSettings::width() const noexcept {
     return m_width;
 }
 
-std::size_t Renderer::height() const noexcept {
+std::size_t RenderSettings::height() const noexcept {
     return m_height;
 }
 
-std::size_t Renderer::numBounces() const noexcept {
+std::size_t RenderSettings::numBounces() const noexcept {
     return m_numBounces;
 }
 
-std::size_t Renderer::samplesPerPixel() const noexcept {
+std::size_t RenderSettings::samplesPerPixel() const noexcept {
     return m_samplesPerPixel;
 }
 
-void Renderer::setSize(size_t w, size_t h) noexcept {
+void RenderSettings::setSize(size_t w, size_t h) noexcept {
     assert(w > 0);
     assert(h > 0);
-    const auto sizeMutexLock = std::lock_guard(m_sizeMutex);
     m_width = w;
     m_height = h;
 }
 
-void Renderer::setNumBounces(std::size_t n) noexcept {
+void RenderSettings::setNumBounces(std::size_t n) noexcept {
     assert(n > 0);
     m_numBounces = n;
 }
 
-void Renderer::setSamplesPerPixel(std::size_t s) noexcept {
+void RenderSettings::setSamplesPerPixel(std::size_t s) noexcept {
     assert(s > 0);
     m_samplesPerPixel = s;
+}
+
+
+Renderer::Renderer() noexcept
+    : m_renderBarrierMaybe(std::nullopt)
+    , m_renderData(std::nullopt) {
+}
+
+Renderer::~Renderer() {
+    this->stopThreadPool();
 }
 
 void Renderer::startThreadPool(size_t numThreads) {
@@ -649,20 +653,21 @@ void Renderer::doWork() const noexcept {
         assert(m_renderData.has_value());
         const auto& camera = *m_renderData->camera;
         const auto& scene = *m_renderData->scene;
+        const auto& settings = *m_renderData->settings;
         auto& img = *m_renderData->image;
-        assert(m_width == img.width());
-        assert(m_height == img.height());
+        assert(settings.width == img.width());
+        assert(settings.height == img.height());
 
-        const auto maxWidth = static_cast<float>(m_width - 1);
-        const auto maxHeight = static_cast<float>(m_height - 1);
-        const auto sppInv = 1.0f / static_cast<float>(m_samplesPerPixel);
+        const auto maxWidth = static_cast<float>(settings.width() - 1);
+        const auto maxHeight = static_cast<float>(settings.height() - 1);
+        const auto sppInv = 1.0f / static_cast<float>(settings.samplesPerPixel());
         const auto deltaX = 1.0f / maxWidth;
         const auto deltaY = 1.0f / maxHeight;
         const auto jitterX = std::uniform_real_distribution<float>{ -0.5f * deltaX, 0.5f * deltaX };
         const auto jitterY = std::uniform_real_distribution<float>{ -0.5f * deltaY, 0.5f * deltaY };
         while (true) {
             const auto taskIndex = m_nextTaskIndex.fetch_add(1);
-            auto taskMaybe = Renderer::makeTask(taskIndex, m_width, m_height);
+            auto taskMaybe = Renderer::makeTask(taskIndex, settings.width(), settings.height());
             if (!taskMaybe.has_value()) {
                 break;
             }
@@ -672,11 +677,11 @@ void Renderer::doWork() const noexcept {
             for (std::size_t x = task.xStart; x < task.xEnd; ++x) {
                 const auto px = static_cast<float>(x) / maxWidth;
                 auto acc = Color{};
-                for (std::size_t i = 0; i < m_samplesPerPixel; ++i){
+                for (std::size_t i = 0; i < settings.samplesPerPixel(); ++i){
                     const auto sx = px + jitterX(randomEngine());
                     const auto sy = py + jitterY(randomEngine());
                     const auto viewRay = camera.getViewRay(sx, sy);
-                    const auto c = scene.trace(viewRay, m_numBounces);
+                    const auto c = scene.trace(viewRay, settings.numBounces());
                     // TODO: operators
                     acc.r += c.r;
                     acc.g += c.g;
@@ -722,19 +727,21 @@ std::optional<Renderer::render_task> Renderer::makeTask(
 
 Image Renderer::render(
     const Scene& scene,
-    const Camera& camera
+    const Camera& camera,
+    const RenderSettings& settings
 ) {
-    const auto sizeMutexLock = std::lock_guard(m_sizeMutex);
+    const auto lock = std::lock_guard(m_mutex);
     if (m_threadPool.size() == 0) {
         this->startThreadPool();
     }
 
-    auto img = Image(m_width, m_height);
+    auto img = Image(settings.width(), settings.height());
 
     assert(!m_renderData.has_value());
     m_renderData.emplace(RenderData{
         &scene,
         &camera,
+        &settings,
         &img
     });
     m_nextTaskIndex.store(0);

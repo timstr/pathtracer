@@ -436,37 +436,32 @@ int main() {
 
     s.updateGeometry();
 
-    auto c = PerspectiveCamera(Affine{});
-    c.setAspectRatio(1.0f);
-    c.setFieldOfView(10.0f);
-    c.setFocalDistance(30.0f);
-    c.setFocalBlurRadius(0.0f);//0.05f);
-    const auto T = Affine::Translation(0.0f, 0.0f, -30.0f) * Linear::Scale(0.01f);
-    c.setTransform(T);
+    auto camera = std::atomic<Camera>{[]{
+        auto c = Camera(Affine{});
+        c.setAspectRatio(1.0f);
+        c.setFieldOfView(10.0f);
+        c.setFocalDistance(30.0f);
+        c.setFocalBlurRadius(0.0f);//0.05f);
+        const auto T = Affine::Translation(0.0f, 0.0f, -30.0f) * Linear::Scale(0.01f);
+        c.setTransform(T);
+        return c;
+    }()};
 
-    auto r = Renderer{256, 256};
+    auto renderSettings = std::atomic<RenderSettings>{[]{
+        auto s = RenderSettings(256, 256);
+        s.setNumBounces(8);
+        s.setSamplesPerPixel(1);
+        return s;
+    }()};
+
+
+    auto r = Renderer{};
     r.startThreadPool();
-    r.setNumBounces(8);
-    r.setSamplesPerPixel(1);
-
-    /*
-    {
-        auto lrr = r;
-        lrr.setWidth(r.width() / 8);
-        lrr.setHeight(r.height() / 8);
-        lrr.setSamplesPerPixel(std::max(r.samplesPerPixel(), std::size_t{1}));
-        std::cout << "Low resolution version\n";
-
-        auto rendered = lrr.render(s, c);
-        saveImage(rendered, "output low res.png");
-    }
-    std::cout << "High resolution version\n";
-    */
 
     auto window = sf::RenderWindow(
         sf::VideoMode(
-            static_cast<unsigned int>(r.width()),
-            static_cast<unsigned int>(r.height())
+            static_cast<unsigned int>(renderSettings.load().width()),
+            static_cast<unsigned int>(renderSettings.load().height())
         ),
         "Path Tracer"
     );
@@ -474,38 +469,70 @@ int main() {
     auto img = sf::Image();
     auto tex = sf::Texture();
     tex.create(
-        static_cast<unsigned int>(r.width()),
-        static_cast<unsigned int>(r.height())
+        static_cast<unsigned int>(renderSettings.load().width()),
+        static_cast<unsigned int>(renderSettings.load().height())
     );
 
-    auto acc = Image(r.width(), r.height());
-    auto count = size_t{0};
+
+    auto done = std::atomic<bool>{false};
+    auto renderReset = std::atomic<bool>{true};
+    auto textureMutex = std::mutex{};
+    auto renderMutex = std::mutex{};
+
+    auto renderThread = std::thread([&]{
+        auto count = size_t{0};
+        auto localCamera = camera.load();
+        auto localSettings = renderSettings.load();
+        auto acc = Image(localSettings.width(), localSettings.height());
+        while (!done.load()) {
+            auto lock = std::lock_guard{renderMutex};
+            if (renderReset.load()) {
+                auto texLock = std::lock_guard{textureMutex};
+                localCamera = camera.load();
+                localSettings = renderSettings.load();
+                tex.create(
+                    static_cast<unsigned>(localSettings.width()),
+                    static_cast<unsigned>(localSettings.height())
+                );
+                acc = Image(localSettings.width(), localSettings.height());
+                count = 0;
+                renderReset.store(false);
+            }
+            auto rendered = r.render(s, localCamera, localSettings);
+            acc += rendered;
+            count += 1;
+            {
+                auto texLock = std::lock_guard{textureMutex};
+                copyToSFImage(acc, img, 1.0f / static_cast<float>(count));
+                tex.loadFromImage(img);
+            }
+        }
+    });
 
     auto running = true;
     while (running) {
         auto event = sf::Event{};
-        bool resetAcc = false;
         while (window.pollEvent(event)) {
             if (event.type == sf::Event::Closed) {
                 running = false;
             } else if (event.type == sf::Event::Resized) {
+                const auto widthF = static_cast<float>(event.size.width);
+                const auto heightF = static_cast<float>(event.size.height);
                 window.setView(sf::View(sf::FloatRect(
-                    0.0f,
-                    0.0f,
-                    static_cast<float>(event.size.width),
-                    static_cast<float>(event.size.height)
+                    0.0f, 0.0f, widthF, heightF
                 )));
-                r.setSize(
+                auto cameraCopy = camera.load();
+                cameraCopy.setAspectRatio(
+                    widthF / heightF
+                );
+                camera.store(cameraCopy);
+                auto settingsCopy = renderSettings.load();
+                settingsCopy.setSize(
                     event.size.width,
                     event.size.height
                 );
-                c.setAspectRatio(
-                    static_cast<float>(event.size.width)
-                    / static_cast<float>(event.size.height)
-                );
-                acc = Image(r.width(), r.height());
-                tex.create(event.size.width, event.size.height);
-                count = 0;
+                renderSettings.store(settingsCopy);
+                renderReset.store(true);
             } else if (event.type == sf::Event::KeyPressed) {
                 auto delta = Vec(0.0f, 0.0f, 0.0f);
                 switch (event.key.code) {
@@ -515,24 +542,30 @@ int main() {
                     case sf::Keyboard::Key::W: delta.z += 1.0f; break;
                     case sf::Keyboard::Key::Q: delta.y -= 1.0f; break;
                     case sf::Keyboard::Key::E: delta.y += 1.0f; break;
-                    case sf::Keyboard::Key::Dash:
+                    case sf::Keyboard::Key::Dash: {
+                        auto cameraCopy = camera.load();
                         if (event.key.control) {
-                            c.setFocalBlurRadius(
-                                std::max(0.0f, c.focalBlurRadius() - 0.1f)
+                            cameraCopy.setFocalBlurRadius(
+                                std::max(0.0f, cameraCopy.focalBlurRadius() - 0.1f)
                             );
                         } else {
-                            c.setFieldOfView(c.fieldOfView() + 1.0f);
+                            cameraCopy.setFieldOfView(cameraCopy.fieldOfView() + 1.0f);
                         }
-                        resetAcc = true;
+                        camera.store(cameraCopy);
+                        renderReset.store(true);
                         break;
-                    case sf::Keyboard::Key::Equal:
+                    }
+                    case sf::Keyboard::Key::Equal: {
+                        auto cameraCopy = camera.load();
                         if (event.key.control) {
-                            c.setFocalBlurRadius(c.focalBlurRadius() + 0.1f);
+                            cameraCopy.setFocalBlurRadius(cameraCopy.focalBlurRadius() + 0.1f);
                         } else {
-                            c.setFieldOfView(c.fieldOfView() - 1.0f);
+                            cameraCopy.setFieldOfView(cameraCopy.fieldOfView() - 1.0f);
                         }
-                        resetAcc = true;
+                        camera.store(cameraCopy);
+                        renderReset.store(true);
                         break;
+                    }
                     case sf::Keyboard::Key::Enter: {
                         auto now = std::time(nullptr);
                         auto tm = *std::localtime(&now);
@@ -544,15 +577,22 @@ int main() {
                             << std::put_time(&tm, "%Y-%m-%d %H-%M-%S")
                             << ".png";
                         const auto path = ss.str();
-                        img.saveToFile(path);
+                        {
+                            // TODO: avoid mutex contention here
+                            auto lock = std::lock_guard{textureMutex};
+                            img.saveToFile(path);
+                        }
                         std::cout << "Saved image to \"" << path
                             << '\"' << std::endl;
                     }
                 }
                 if (delta.norm() > 1e-3f) {
-                    auto& t = c.transform();
+                    auto cameraCopy = camera.load();
+                    auto& t = cameraCopy.transform();
                     if (event.key.control) {
-                        c.setFocalDistance(c.focalDistance() + 0.25f * delta.z);
+                        cameraCopy.setFocalDistance(
+                            cameraCopy.focalDistance() + 0.25f * delta.z
+                        );
                     } else if (event.key.shift) {
                         const auto k = 3.141592654f * 0.025f;
                         t.linear *= (
@@ -563,28 +603,26 @@ int main() {
                     } else {
                         t.translation += 10.0f * t.linear * delta;
                     }
-                    resetAcc = true;
+                    camera.store(cameraCopy);
+                    renderReset.store(true);
                 }
             }
         }
         if (!running) {
             break;
         }
-        if (resetAcc) {
-            acc.fill(Color(0.0f, 0.0f, 0.0f));
-            count = 0;
-        }
 
-        auto rendered = r.render(s, c);
-        acc += rendered;
-        count += 1;
-        copyToSFImage(acc, img, 1.0f / static_cast<float>(count));
-        tex.loadFromImage(img);
-        window.clear();
-        const auto spr = sf::Sprite(tex);
-        window.draw(spr);
-        window.display();
+        {
+            auto lock = std::lock_guard{textureMutex};
+            window.clear();
+            const auto spr = sf::Sprite(tex);
+            window.draw(spr);
+            window.display();
+        }
     }
+
+    done.store(true);
+    renderThread.join();
 
     return 0;
 }

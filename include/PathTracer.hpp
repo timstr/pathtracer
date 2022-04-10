@@ -290,14 +290,7 @@ private:
 
 class Camera {
 public:
-    virtual ~Camera() noexcept = default;
-
-    virtual Ray getViewRay(float screenX, float screenY) const noexcept = 0;
-};
-
-class PerspectiveCamera : public Camera {
-public:
-    PerspectiveCamera(Affine transform, float aspectRatio = 1.0f, float fieldOfView = 30.0f) noexcept;
+    Camera(Affine transform, float aspectRatio = 1.0f, float fieldOfView = 30.0f) noexcept;
 
     const Affine& transform() const noexcept;
     Affine& transform() noexcept;
@@ -312,7 +305,7 @@ public:
     void setFocalDistance(float) noexcept;
     void setFocalBlurRadius(float) noexcept;
 
-    Ray getViewRay(float screenX, float screenY) const noexcept override final;
+    Ray getViewRay(float screenX, float screenY) const noexcept;
 
 private:
     Affine m_transform;
@@ -345,15 +338,9 @@ private:
     std::vector<Color> m_data;
 };
 
-class Renderer {
+class RenderSettings {
 public:
-    Renderer(std::size_t width = 1024, std::size_t height = 1024) noexcept;
-    ~Renderer();
-
-    Renderer(const Renderer&) = delete;
-    Renderer(Renderer&&) = delete;
-    Renderer& operator=(const Renderer&) = delete;
-    Renderer& operator=(Renderer&&) = delete;
+    RenderSettings(std::size_t width = 256, std::size_t height = 256) noexcept;
 
     std::size_t width() const noexcept;
     std::size_t height() const noexcept;
@@ -364,21 +351,33 @@ public:
     void setNumBounces(std::size_t) noexcept;
     void setSamplesPerPixel(std::size_t) noexcept;
 
-    void startThreadPool(size_t numThreads = 0);
-
-    void stopThreadPool();
-
-    Image render(const Scene&, const Camera&);
-
 private:
     std::size_t m_width;
     std::size_t m_height;
     std::size_t m_numBounces;
     std::size_t m_samplesPerPixel;
+};
+
+class Renderer {
+public:
+    Renderer() noexcept;
+    ~Renderer();
+
+    Renderer(const Renderer&) = delete;
+    Renderer(Renderer&&) = delete;
+    Renderer& operator=(const Renderer&) = delete;
+    Renderer& operator=(Renderer&&) = delete;
+
+    void startThreadPool(size_t numThreads = 0);
+    void stopThreadPool();
+
+    Image render(const Scene&, const Camera&, const RenderSettings&);
+
+private:
+    mutable std::mutex m_mutex;
     mutable std::optional<std::barrier<>> m_renderBarrierMaybe;
     mutable std::atomic<size_t> m_nextTaskIndex;
     std::atomic<bool> m_timeToExit;
-    mutable std::mutex m_sizeMutex;
 
     static const size_t s_pixelsPerTask = 8;
 
@@ -399,6 +398,7 @@ private:
     struct RenderData {
         const Scene* scene;
         const Camera* camera;
+        const RenderSettings* settings;
         Image* image;
     };
 
