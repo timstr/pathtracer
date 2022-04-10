@@ -61,6 +61,20 @@ Pos::Pos(float _x, float _y, float _z) noexcept
 
 }
 
+Pos& Pos::operator+=(const Vec& v) noexcept {
+    this->x += v.x;
+    this->y += v.y;
+    this->z += v.z;
+    return *this;
+}
+
+Pos& Pos::operator-=(const Vec& v) noexcept {
+    this->x -= v.x;
+    this->y -= v.y;
+    this->z -= v.z;
+    return *this;
+}
+
 Vec Pos::toVec() const noexcept {
     return Vec{x, y, z};
 }
@@ -133,7 +147,7 @@ Linear::Linear(Vec v1, Vec v2, Vec v3) noexcept
 
 }
 
-Linear::Linear(float a, float b, float c, float d, float e, float f, float g, float h, float i) noexcept 
+Linear::Linear(float a, float b, float c, float d, float e, float f, float g, float h, float i) noexcept
     : m_data({
         a, b, c,
         d, e, f,
@@ -179,14 +193,14 @@ Linear Linear::transpose() const noexcept {
     const auto& [a, b, c, d, e, f, g, h, i] = m_data;
     return Linear(
         a, d, g,
-        b, e, h, 
+        b, e, h,
         c, f, i
     );
 }
 
 float Linear::determinant() const noexcept {
     const auto& [a, b, c, d, e, f, g, h, i] = m_data;
-    return (a * e * i) + (b * f * g) + (c * d * h) 
+    return (a * e * i) + (b * f * g) + (c * d * h)
         - (c * e * g) - (b * d * i) - (a * f * h);
 }
 

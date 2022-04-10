@@ -25,6 +25,8 @@ public:
 
     float volume() const noexcept;
 
+    float signedDistance(Pos p) const noexcept;
+
     Vec normal(Pos p) const noexcept;
 };
 
@@ -37,6 +39,8 @@ public:
     float surfaceArea() const noexcept;
 
     float volume() const noexcept;
+
+    float signedDistance(Pos p) const noexcept;
 
     Vec normal(Pos p) const noexcept;
 };
@@ -80,4 +84,8 @@ bool inside(const Pos&, const AxisAlignedBox&) noexcept;
 
 std::pair<float, float> randomPointInCircle() noexcept;
 
+std::pair<Vec, Vec> orthogonalPair(Vec v) noexcept;
+
 Vec randomPointOnHemisphereUniform(Vec normal) noexcept;
+
+Vec randomPointOnHemisphereCosine(Vec normal) noexcept;

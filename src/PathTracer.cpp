@@ -160,15 +160,15 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
             // Refraction to outside
             // TODO: diffuse/specular scatter
             return ColorBounce {
-                Color{0.0f, 0.0f, 0.0f}, // TODO: emitted color?
+                Color{1.0f, 0.0f, 1.0f}, // TODO: emitted color?
                 Color{1.0f, 1.0f, 1.0f}, // TODO: internal absorption (requires knowing distance traveled)
-                inbound,
+                inbound, // TODO: this is not refraction
                 normal
             };
         } else {
             // Total internal reflection
             return ColorBounce{
-                Color{0.0f, 0.0f, 0.0f}, // HACK: yellow if total internal reflection
+                Color{0.0f, 1.0f, 1.0f}, // HACK: yellow if total internal reflection
                 Color{0.0f, 0.0f, 0.0f}, // TODO: internal absorption (requires knowing distance traveled)
                 bounce(inbound, -normal),
                 normal
@@ -184,7 +184,7 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
         // Reflection
         if (which < m_diffuseReflection){
             // Diffuse reflection
-            const auto v = randomPointOnHemisphereUniform(normal);
+            const auto v = randomPointOnHemisphereCosine(normal);
             return ColorBounce{
                 m_emittedLuminance,
                 m_reflectedAbsorption,
@@ -193,7 +193,7 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
             };
         } else {
             // Specular reflection
-            const auto s = sinTheta * (1.0f - m_specularSharpness) * randomPointOnHemisphereUniform(normal);
+            const auto s = (1.0f - m_specularSharpness) * randomPointOnHemisphereCosine(normal);
             const auto v = (bounce(inbound, normal) + s).unit();
             return ColorBounce{
                 m_emittedLuminance,
@@ -301,29 +301,27 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
     auto color = Color{};
     auto attenuation = Color{1.0f, 1.0f, 1.0f};
     for (std::size_t i = 0; i < depth; ++i) {
-        /*
         // Brute force search
-        auto closestT = std::numeric_limits<float>::max();
-        auto closestPos = Pos{};
-        const Object* hitObj = nullptr;
-        for (const auto& obj : m_objects) {
-            auto bb = obj->getBoundingBox();
-            if (!intersect(ray, bb)) {
-                continue;
-            }
-            if (auto p = obj->hitRay(ray)) {
-                const auto t = (*p - ray.pos) * ray.dir;
-                if (t < closestT) {
-                    hitObj = obj.get();
-                    closestT = t;
-                    closestPos = *p;
-                }
-            }
-        }
-        if (!hitObj) {
-            return color;
-        }
-        */
+        // auto closestT = std::numeric_limits<float>::max();
+        // auto closestPos = Pos{};
+        // const Object* hitObj = nullptr;
+        // for (const auto& obj : m_objects) {
+        //     auto bb = obj->getBoundingBox();
+        //     if (!intersect(ray, bb)) {
+        //         continue;
+        //     }
+        //     if (auto p = obj->hitRay(ray)) {
+        //         const auto t = (*p - ray.pos) * ray.dir;
+        //         if (t < closestT) {
+        //             hitObj = obj.get();
+        //             closestT = t;
+        //             closestPos = *p;
+        //         }
+        //     }
+        // }
+        // if (!hitObj) {
+        //     return color;
+        // }
 
         // Tree search
         const auto hit = m_objectTree.hit(ray);
@@ -335,6 +333,8 @@ Color Scene::trace(Ray ray, std::size_t depth) const noexcept {
         // TODO: overload +=
         ray.pos = closestPos;
         const auto bounce = hitObj->deflectRay(ray);
+        ray.pos += 1e-3f * bounce.rayDirection;
+        // TODO: find a way to reliably prevent accidental transmittance
         assert(bounce.emitted.r >= 0.0f);
         assert(bounce.emitted.g >= 0.0f);
         assert(bounce.emitted.b >= 0.0f);
@@ -377,7 +377,7 @@ void Scene::updateGeometry() {
 PerspectiveCamera::PerspectiveCamera(Affine transform, float aspectRatio, float fieldOfView) noexcept
     : m_transform(transform)
     , m_aspectRatio(aspectRatio)
-    , m_fieldOfView(fieldOfView) 
+    , m_fieldOfView(fieldOfView)
     , m_focalDistance(10.0f)
     , m_focalBlurRadius(0.0f) {
 
@@ -476,7 +476,7 @@ namespace {
     void writeFloat32(std::ofstream& f, float x) noexcept {
         f.write(reinterpret_cast<const char*>(&x), sizeof(x));
     }
-    
+
     std::uint64_t readUInt64(std::ifstream& f) noexcept {
         auto x = std::uint64_t{};
         f.read(reinterpret_cast<char*>(&x), sizeof(x));
@@ -827,7 +827,7 @@ AxisAlignedBox BoxObject::getLocalBoundingBox() const noexcept {
 
 std::optional<Pos> FractalObject::hitLocalRay(const Ray& ray) const noexcept {
     const auto p0 = intersect(ray, getBoundingBox());
-    
+
     if (!p0.has_value()) {
         return std::nullopt;
     }
@@ -888,14 +888,14 @@ float FractalObject::signedDistance(const Pos& p) const noexcept {
             std::sin(theta) * std::sin(phi),
             std::cos(theta)
         };
-        z = z + p.toVec(); 
+        z = z + p.toVec();
     }
     const auto d = 0.5f * std::log(r) * r / dr;
 
     return d;
     */
     // 5 x 5 x 5 spheres
-    
+
     const auto f = [](float v) {
         const auto l = 0.5f;
         const auto r = 2.0f;
@@ -916,49 +916,46 @@ float FractalObject::signedDistance(const Pos& p) const noexcept {
     };
 
     return v.norm() - 0.2f;
-    
+
 }
+
 
 const Affine& Object::transformation() const noexcept {
     return m_transformation;
 }
 
-const std::optional<Affine>& Object::inverseTransformation() const noexcept {
+const Affine& Object::inverseTransformation() const noexcept {
     return m_inverseTransformation;
 }
 
 void Object::setTransformation(const Affine& t) noexcept {
     m_transformation = t;
-    m_inverseTransformation = m_transformation.inverse();
+    auto invMaybe = m_transformation.inverse();
+    assert(invMaybe.has_value());
+    m_inverseTransformation = *invMaybe;
 }
 
 std::optional<Pos> Object::hitRay(const Ray& ray) const noexcept {
-    const auto& invMaybe = inverseTransformation();
-    if (!invMaybe.has_value()) {
-        return std::nullopt;
-    }
-    const auto& inv = *invMaybe;
+    const auto& inv = this->inverseTransformation();
     auto localRay = Ray(
         inv * ray.dir,
         inv * ray.pos
     );
-    auto localHit = hitLocalRay(localRay);
+    auto localHit = this->hitLocalRay(localRay);
     if (!localHit.has_value()) {
         return std::nullopt;
     }
-    return transformation() * (*localHit);
+    return this->transformation() * (*localHit);
 }
 
 ColorBounce Object::deflectRay(const Ray& ray) const noexcept {
-    const auto& invMaybe = inverseTransformation();
-    assert(invMaybe.has_value());
-    const auto& inv = *invMaybe;
+    const auto& inv = this->inverseTransformation();
     auto localRay = Ray(
         inv * ray.dir,
         inv * ray.pos
     );
-    auto deflected = deflectLocalRay(localRay);
-    deflected.rayDirection = transformation() * deflected.rayDirection;
+    auto deflected = this->deflectLocalRay(localRay);
+    deflected.rayDirection = this->transformation() * deflected.rayDirection;
     return deflected;
 }
 

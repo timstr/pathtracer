@@ -38,6 +38,9 @@ public:
 
     explicit Pos(float _x = 0.0f, float _y = 0.0f, float _z = 0.0f) noexcept;
 
+    Pos& operator+=(const Vec& v) noexcept;
+    Pos& operator-=(const Vec& v) noexcept;
+
     Vec toVec() const noexcept;
 };
 

@@ -9,6 +9,105 @@
 #include <iomanip>
 #include <sstream>
 
+float triangle(float x) noexcept {
+    return 2.0f * std::abs(x - std::floor(x + 0.5f));
+}
+
+const Affine& noiseTransform() noexcept {
+    static auto t = []{
+        auto dist = std::uniform_real_distribution<float>(0.0f, 1.0f);
+        const auto t1 = dist(randomEngine());
+        const auto t2 = dist(randomEngine());
+        const auto t3 = dist(randomEngine());
+        const auto r1 = dist(randomEngine());
+        const auto r2 = dist(randomEngine());
+        const auto r3 = dist(randomEngine());
+        std::cout << t1 << ' ' << t2 << ' ' << t3 << std::endl;
+        std::cout << r1 << ' ' << r2 << ' ' << r3 << std::endl;
+        return Affine::Translation(Vec(t1, t2, t3))
+            * Linear::RotationX(r1)
+            * Linear::RotationY(r2)
+            * Linear::RotationZ(r3);
+    }();
+    return t;
+}
+
+float noise(Pos location) noexcept {
+    auto v = 0.0f;
+    const auto& transform = noiseTransform();
+    auto k = 0.1f;
+    auto kk = 0.85f;
+    for (int i = 0; i < 32; ++i) {
+        location = transform * location;
+        v += k * triangle(location.x);
+        location.x *= 1.1f;
+        location.y *= 1.1f;
+        location.z *= 1.1f;
+        k *= kk;
+    }
+    return v;
+}
+
+float smin(float a, float b, float k) noexcept {
+    return -std::log2(
+        std::exp2(-k * a) + std::exp2(-k * b)
+    ) / k;
+}
+
+class RoughSphereObject : public SDFObjectCRTP<RoughSphereObject> {
+public:
+    RoughSphereObject(Sphere geometry, BasicMaterial mat)
+        : SDFObjectCRTP(mat)
+        , m_geometry(geometry) {
+
+    }
+
+
+    float signedDistance(const Pos& pos) const noexcept {
+        const auto r = 0.8f * m_geometry.radius;
+        const auto sdBox = Rectangle(Vec(r, r, r)).signedDistance(pos);
+        const auto sdSphere = m_geometry.signedDistance(pos);
+        const auto sd = smin(sdBox, sdSphere, 8.0f);
+        const auto craters = std::max(0.0f, -1.0f + 3.0f * noise((1.0f * pos.toVec()).toPos()));
+        const auto bumps = -0.15f + 0.5f * noise((4.0f * pos.toVec()).toPos());
+        return smin(sd + craters, sd + craters + bumps, 32.0f);
+    }
+
+    AxisAlignedBox localBoundingBox() const noexcept {
+        return AxisAlignedBox(
+            Pos(0.0f, 0.0f, 0.0f),
+            1.2f * m_geometry.radius * Vec(1.0f, 1.0f, 1.0f)
+        );
+    }
+
+private:
+    Sphere m_geometry;
+};
+
+class RoughBoxObject : public SDFObjectCRTP<RoughBoxObject> {
+public:
+    RoughBoxObject(Rectangle geometry, BasicMaterial mat)
+        : SDFObjectCRTP(mat)
+        , m_geometry(geometry) {
+
+    }
+
+
+    float signedDistance(const Pos& pos) const noexcept {
+        return m_geometry.signedDistance(pos) + 0.2f * noise((10.0f * pos.toVec()).toPos());
+    }
+
+    AxisAlignedBox localBoundingBox() const noexcept {
+        return AxisAlignedBox(
+            Pos(0.0f, 0.0f, 0.0f),
+            1.1f * m_geometry.halfSize
+        );
+    }
+
+private:
+    Rectangle m_geometry;
+};
+
 class InfiniteLightSource : public Object {
 public:
     Color color;
@@ -64,152 +163,208 @@ int main() {
 
     auto s = Scene{};
 
-    // Cornell box
+    // Random spheres
     {
-        auto matte = BasicMaterial();
-        matte.setDiffuseReflection(1.0f);
-        // matte.setEmittedLuminance(Color(0.1f, 0.1f, 0.1f));
-        matte.setEmittedLuminance(Color(0.0f, 0.0f, 0.0f));
-        matte.setSpecularReflection(0.0f);
-        matte.setTransmittance(0.0f);
-
-        auto matteRed = matte;
-        auto matteGreen = matte;
-        auto matteGray = matte;
-        auto matteWhite = matte;
-        matteRed.setReflectedAbsorption(Color(0.8f, 0.1f, 0.1f));
-        matteGreen.setReflectedAbsorption(Color(0.1f, 0.8f, 0.1f));
-        matteGray.setReflectedAbsorption(Color(0.2f, 0.2f, 0.3f));
-        matteWhite.setReflectedAbsorption(Color(1.0f, 1.0f, 1.0f));
-
-        auto glowing = matte;
-        auto antiGlowing = matte;
-        glowing.setEmittedLuminance(Color(50.0f, 40.0f, 30.0f));
-        antiGlowing.setEmittedLuminance(Color(-25.0f, -20.0f, -15.0f));
-
-        auto mirror = matte;
-        mirror.setDiffuseReflection(0.05f);
-        mirror.setSpecularReflection(0.95f);
-        mirror.setSpecularSharpness(0.95f);
-        mirror.setReflectedAbsorption(Color(0.9f, 0.9f, 0.9f));
-
-        const auto d = 0.01f;
-
-        auto& lightSource = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), glowing);
-        lightSource.setTransformation(Affine::Translation(Vec{0.0f, -5.0f + 2.0f * d, 0.0f}));
-
-        auto& lightSink = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), antiGlowing);
-        lightSink.setTransformation(Affine::Translation(Vec{0.0f, 5.0f - 2.0f * d, 0.0f}));
-
-        auto& rearWall = s.addObject<BoxObject>(Rectangle(Vec{5.0f, 5.0f, d}), matteWhite);
-        rearWall.setTransformation(Affine::Translation(Vec{0.0f, 0.0f, 5.0f}));
-
-        auto& floor = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
-        floor.setTransformation(Affine::Translation(Vec{0.0f, 5.0f, 0.0f}));
-
-        // ceiling
-        auto& ceiling = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
-        ceiling.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
-
-        // left wall
-        auto& leftWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteRed);
-        leftWall.setTransformation(Affine::Translation(Vec{-5.0f, 0.0f, 0.0f}));
-
-        // right wall
-        auto& rightWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteGreen);
-        rightWall.setTransformation(Affine::Translation(Vec{5.0f, 0.0f, 0.0f}));
-
-        // front box
-        // auto& box = s.addObject<BoxObject>(Rectangle(Vec{1.5f, 2.0, 1.5f}), matteWhite);
-        // box.setTransformation(Affine::Translation(Vec{-1.5f, 3.0f, 1.0f}) * Linear::RotationY(0.4136f));
-        // box.material.setReflectedAbsorption(Color(0.5f, 0.5f, 1.0f));
-
-        auto& whiteSphere1 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
-        whiteSphere1.setTransformation(Affine::Translation(Vec{-3.0f, 3.5f, -2.5f}));
-
-        auto& whiteSphere2 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
-        whiteSphere2.setTransformation(Affine::Translation(Vec{3.0f, -3.5f, -2.5f}));
-
-        auto& mirrorSphere1 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
-        mirrorSphere1.setTransformation(Affine::Translation(Vec{3.0f, 3.5f, 2.5f}));
-
-        auto& mirrorSphere2 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
-        mirrorSphere2.setTransformation(Affine::Translation(Vec{-3.0f, -3.5f, 2.5f}));
-
-        // auto& fractal = s.addObject<FractalObject>();
-        // fractal.material = matteGray;
-        // fractal.material.setEmittedLuminance(Color(0.05f, 0.1f, 0.2f));
-        // fractal.material.setReflectedAbsorption(Color(0.2f, 0.4f, 0.8f));
-        // fractal.material.setDiffuseReflection(1.0f);
-        // fractal.material.setSpecularReflection(1.0f);
-        // fractal.setTransformation(
-        //     Affine::Translation(Vec{-1.5f, -1.0f, 1.0f})
-        //     // * Linear::RotationY(0.6f)
-        //     // * Linear::RotationX(0.3f)
-        //     // * Linear::Scale(1.5f)
-        // );
-    }
-
-    // Globe of cubes
-    /*
-    {
-        const auto res = std::size_t{32};
-        const auto size = 3.0f;
-        const auto dsize = size / static_cast<float>(res);
-        const auto mapToSpace = [&](std::size_t idx) {
-            return (static_cast<float>(idx) / static_cast<float>(res - 1) * 2.0f - 1.0f) * size;
-        };
-
-
-        const auto dist = std::uniform_real_distribution<float>{0.0f, 1.0f};
-
-        for (std::size_t i = 0; i < res; ++i){
-            const auto x = mapToSpace(i);
-            for (std::size_t j = 0; j < res; ++j){
-                const auto y = mapToSpace(j);
-                for (std::size_t k = 0; k < res; ++k){
-                    const auto z = mapToSpace(k);
-                    if (x * x + y * y + z * z > size) {
-                        continue;
-                    }
-
-                    if (dist(randomEngine()) < 0.3f) {
-                        continue;
-                    }
-
-                    const auto r = Rectangle(dsize * Vec(
-                        (1.0f + 1.0f * dist(randomEngine())),
-                        (1.0f + 1.0f * dist(randomEngine())),
-                        (1.0f + 1.0f * dist(randomEngine()))
-                    ));
-
-                    auto m = BasicMaterial{};
-                    if (dist(randomEngine()) < 0.7f) {
-                        m.setDiffuseReflection(1.0f);
-                        m.setSpecularReflection(0.05f);
-                        m.setSpecularSharpness(0.9f);
-                        m.setTransmittance(0.0f);
-                        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
-                        m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
-                    } else {
-                        m.setDiffuseReflection(0.02f);
-                        m.setSpecularReflection(0.2f);
-                        m.setSpecularSharpness(0.99f);
-                        m.setTransmittance(0.95f);
-                        m.setIndexOfRefraction(1.55f);
-                        m.setReflectedAbsorption(Color{0.8f, 0.9f, 1.0f});
-                        m.setEmittedLuminance(Color{0.01f, 0.02f, 0.04f});
-                    }
-                    auto& b = s.addObject<BoxObject>(r, m);
-                    b.setTransformation(Affine::Translation(Vec(x, y, z)));
-                }
-            }
+        const auto pdist = std::uniform_real_distribution<float>{0.0f, 1.0f};
+        const auto sdist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+        for (std::size_t i = 0; i < 50; ++i) {
+            const auto geom = Sphere{
+                0.1f + 0.4f * pdist(randomEngine())
+            };
+            // const auto geom = 0.1f + 0.4f * pdist(randomEngine());
+            auto m = BasicMaterial{};
+            m.setDiffuseReflection(1.0f);
+            m.setSpecularReflection(0.0f);
+            m.setTransmittance(0.0f);
+            const auto k = 30.0f * std::pow(pdist(randomEngine()), 3.0f);
+            m.setEmittedLuminance(Color{
+                k * pdist(randomEngine()),
+                k * pdist(randomEngine()),
+                k * pdist(randomEngine())
+            });
+            auto& sphere = s.addObject<SphereObject>(geom, m);
+            sphere.setTransformation(Affine::Translation(Vec{
+                10.0f * sdist(randomEngine()),
+                10.0f * sdist(randomEngine()),
+                10.0f * sdist(randomEngine())
+            }));
         }
     }
-    */
+
+    // Cornell box
+    // {
+    //     auto matte = BasicMaterial();
+    //     matte.setDiffuseReflection(1.0f);
+    //     // matte.setEmittedLuminance(Color(0.1f, 0.1f, 0.1f));
+    //     matte.setEmittedLuminance(Color(0.0f, 0.0f, 0.0f));
+    //     matte.setSpecularReflection(0.0f);
+    //     matte.setTransmittance(0.0f);
+
+    //     auto matteRed = matte;
+    //     auto matteGreen = matte;
+    //     auto matteGray = matte;
+    //     auto matteWhite = matte;
+    //     matteRed.setReflectedAbsorption(Color(0.8f, 0.1f, 0.1f));
+    //     matteGreen.setReflectedAbsorption(Color(0.1f, 0.8f, 0.1f));
+    //     matteGray.setReflectedAbsorption(Color(0.2f, 0.2f, 0.3f));
+    //     matteWhite.setReflectedAbsorption(Color(1.0f, 1.0f, 1.0f));
+
+    //     auto glowing = matte;
+    //     auto antiGlowing = matte;
+    //     glowing.setEmittedLuminance(Color(50.0f, 40.0f, 30.0f));
+    //     antiGlowing.setEmittedLuminance(Color(-25.0f, -20.0f, -15.0f));
+
+    //     auto mirror = matte;
+    //     mirror.setDiffuseReflection(0.05f);
+    //     mirror.setSpecularReflection(0.95f);
+    //     mirror.setSpecularSharpness(0.95f);
+    //     mirror.setReflectedAbsorption(Color(0.9f, 0.9f, 0.9f));
+
+    //     const auto d = 0.01f;
+
+    //     auto& lightSource = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), glowing);
+    //     lightSource.setTransformation(Affine::Translation(Vec{0.0f, -5.0f + 2.0f * d, 0.0f}));
+
+    //     auto& lightSink = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), antiGlowing);
+    //     lightSink.setTransformation(Affine::Translation(Vec{0.0f, 5.0f - 2.0f * d, 0.0f}));
+
+    //     auto& rearWall = s.addObject<BoxObject>(Rectangle(Vec{5.0f, 5.0f, d}), matteWhite);
+    //     rearWall.setTransformation(Affine::Translation(Vec{0.0f, 0.0f, 5.0f}));
+
+    //     auto& floor = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
+    //     floor.setTransformation(Affine::Translation(Vec{0.0f, 5.0f, 0.0f}));
+
+    //     // ceiling
+    //     auto& ceiling = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
+    //     ceiling.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
+
+    //     // left wall
+    //     auto& leftWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteRed);
+    //     leftWall.setTransformation(Affine::Translation(Vec{-5.0f, 0.0f, 0.0f}));
+
+    //     // right wall
+    //     auto& rightWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteGreen);
+    //     rightWall.setTransformation(Affine::Translation(Vec{5.0f, 0.0f, 0.0f}));
+
+    //     // front box
+    //     // auto& box = s.addObject<BoxObject>(Rectangle(Vec{1.5f, 2.0, 1.5f}), matteWhite);
+    //     // box.setTransformation(Affine::Translation(Vec{-1.5f, 3.0f, 1.0f}) * Linear::RotationY(0.4136f));
+    //     // box.material.setReflectedAbsorption(Color(0.5f, 0.5f, 1.0f));
+
+    //     auto& whiteSphere1 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
+    //     whiteSphere1.setTransformation(Affine::Translation(Vec{-3.0f, 3.5f, -2.5f}));
+
+    //     auto& whiteSphere2 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
+    //     whiteSphere2.setTransformation(Affine::Translation(Vec{3.0f, -3.5f, -2.5f}));
+
+    //     auto& mirrorSphere1 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
+    //     mirrorSphere1.setTransformation(Affine::Translation(Vec{3.0f, 3.5f, 2.5f}));
+
+    //     auto& mirrorSphere2 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
+    //     mirrorSphere2.setTransformation(Affine::Translation(Vec{-3.0f, -3.5f, 2.5f}));
+
+    //     // auto& fractal = s.addObject<FractalObject>();
+    //     // fractal.material = matteGray;
+    //     // fractal.material.setEmittedLuminance(Color(0.05f, 0.1f, 0.2f));
+    //     // fractal.material.setReflectedAbsorption(Color(0.2f, 0.4f, 0.8f));
+    //     // fractal.material.setDiffuseReflection(1.0f);
+    //     // fractal.material.setSpecularReflection(1.0f);
+    //     // fractal.setTransformation(
+    //     //     Affine::Translation(Vec{-1.5f, -1.0f, 1.0f})
+    //     //     // * Linear::RotationY(0.6f)
+    //     //     // * Linear::RotationX(0.3f)
+    //     //     // * Linear::Scale(1.5f)
+    //     // );
+    // }
+
+    // Globe of cubes (or glob of spheres)
+    // {
+    //     const auto res = std::size_t{16};
+    //     const auto size = 3.0f;
+    //     const auto dsize = size / static_cast<float>(res);
+    //     const auto mapToSpace = [&](std::size_t idx) {
+    //         return (static_cast<float>(idx) / static_cast<float>(res - 1) * 2.0f - 1.0f) * size;
+    //     };
+
+
+    //     const auto dist = std::uniform_real_distribution<float>{0.0f, 1.0f};
+    //     const auto sdist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+
+    //     for (std::size_t i = 0; i < res; ++i){
+    //         const auto x = mapToSpace(i);
+    //         for (std::size_t j = 0; j < res; ++j){
+    //             const auto y = mapToSpace(j);
+    //             for (std::size_t k = 0; k < res; ++k){
+    //                 const auto z = mapToSpace(k);
+    //                 if (x * x + y * y + z * z > size) {
+    //                     continue;
+    //                 }
+
+    //                 // if (dist(randomEngine()) < 0.6f) {
+    //                 //     continue;
+    //                 // }
+
+    //                 const auto g = Rectangle(dsize * Vec(
+    //                     (0.8f + 0.2f * dist(randomEngine())),
+    //                     (0.8f + 0.2f * dist(randomEngine())),
+    //                     (0.8f + 0.2f * dist(randomEngine()))
+    //                 ));
+    //                 // const auto g = Sphere(0.0f + 0.3f * dist(randomEngine()));
+
+    //                 auto m = BasicMaterial{};
+    //                 if (dist(randomEngine()) < 0.9f) {
+    //                     m.setDiffuseReflection(1.0f);// * dist(randomEngine()));
+    //                     m.setSpecularReflection(0.0f);//1.0f * dist(randomEngine()));
+    //                     m.setSpecularSharpness(1.0f);//1.0f * dist(randomEngine()));
+    //                     m.setTransmittance(0.0f);
+    //                     m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+    //                     m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+    //                 } else {
+    //                     m.setDiffuseReflection(0.02f);
+    //                     m.setSpecularReflection(0.3f);
+    //                     m.setSpecularSharpness(0.99f);
+    //                     m.setTransmittance(0.85f);
+    //                     m.setIndexOfRefraction(1.55f);
+    //                     m.setReflectedAbsorption(Color{0.8f, 0.9f, 1.0f});
+    //                     m.setEmittedLuminance(Color{0.10f, 0.25f, 0.0f});
+    //                 }
+    //                 auto& b = s.addObject<RoughBoxObject>(g, m);
+    //                 // auto& b = s.addObject<RoughSphereObject>(g, m);
+    //                 b.setTransformation(
+    //                     Affine::Translation(Vec(
+    //                         x + 0.2f * sdist(randomEngine()),
+    //                         y + 0.2f * sdist(randomEngine()),
+    //                         z + 0.2f * sdist(randomEngine())
+    //                     ))
+    //                     * Linear::RotationX(0.05f * sdist(randomEngine()))
+    //                     * Linear::RotationY(0.05f * sdist(randomEngine()))
+    //                     * Linear::RotationZ(0.05f * sdist(randomEngine()))
+    //                 );
+    //             }
+    //         }
+    //     }
+    // }
+
+    // Just one sphere (or box)
+    {
+        const auto g = Sphere(4.0f);
+        // const auto g = Rectangle(Vec(1.0f, 1.0f, 1.0f));
+        // const auto g = 1.0f;
+        auto m = BasicMaterial{};
+        m.setDiffuseReflection(1.0f);
+        m.setSpecularReflection(0.0f);
+        m.setSpecularSharpness(1.0f);
+        m.setTransmittance(0.0f);
+        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+        m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+
+        auto& b = s.addObject<RoughSphereObject>(g, m);
+        //auto& b = s.addObject<SphereObject>(g, m);
+        // auto& b = s.addObject<BoxObject>(g, m);
+    }
 
     // light source
-    /*{
+    {
         auto m = BasicMaterial{};
         m.setDiffuseReflection(1.0f);
         m.setSpecularReflection(0.0f);
@@ -217,9 +372,9 @@ int main() {
         m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
         m.setEmittedLuminance(Color{1.0f, 1.0f, 1.0f});
 
-        auto& b = s.addObject<BoxObject>(Rectangle(Vec(10.0f, 0.1f, 10.0f)), m);
-        b.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
-    }*/
+        auto& b = s.addObject<BoxObject>(Rectangle(Vec(100.0f, 0.1f, 100.0f)), m);
+        b.setTransformation(Affine::Translation(Vec{0.0f, -50.0f, 0.0f}));
+    }
 
     // Fractal
     /*{
@@ -285,13 +440,13 @@ int main() {
     c.setAspectRatio(1.0f);
     c.setFieldOfView(10.0f);
     c.setFocalDistance(30.0f);
-    c.setFocalBlurRadius(0.05f);
-    const auto T = Affine::Translation(0.0f, 0.0f, -30.0f) * Linear::Scale(1.0);
+    c.setFocalBlurRadius(0.0f);//0.05f);
+    const auto T = Affine::Translation(0.0f, 0.0f, -30.0f) * Linear::Scale(0.01f);
     c.setTransform(T);
 
-    auto r = Renderer{512, 512};
+    auto r = Renderer{256, 256};
     r.startThreadPool();
-    r.setNumBounces(16);
+    r.setNumBounces(8);
     r.setSamplesPerPixel(1);
 
     /*
@@ -322,7 +477,6 @@ int main() {
         static_cast<unsigned int>(r.width()),
         static_cast<unsigned int>(r.height())
     );
-    auto spr = sf::Sprite(tex);
 
     auto acc = Image(r.width(), r.height());
     auto count = size_t{0};
@@ -407,7 +561,7 @@ int main() {
                             * Linear::RotationZ(k * delta.z)
                         );
                     } else {
-                        t.translation += 0.1f * t.linear * delta;
+                        t.translation += 10.0f * t.linear * delta;
                     }
                     resetAcc = true;
                 }
@@ -427,6 +581,7 @@ int main() {
         copyToSFImage(acc, img, 1.0f / static_cast<float>(count));
         tex.loadFromImage(img);
         window.clear();
+        const auto spr = sf::Sprite(tex);
         window.draw(spr);
         window.display();
     }

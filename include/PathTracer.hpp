@@ -51,10 +51,11 @@ public:
 
 class Object {
 public:
+    Object() noexcept = default;
     virtual ~Object() noexcept = default;
 
     const Affine& transformation() const noexcept;
-    const std::optional<Affine>& inverseTransformation() const noexcept;
+    const Affine& inverseTransformation() const noexcept;
     void setTransformation(const Affine&) noexcept;
 
     // TODO: think about the normal matrix
@@ -93,7 +94,7 @@ protected:
 
 private:
     Affine m_transformation;
-    std::optional<Affine> m_inverseTransformation;
+    Affine m_inverseTransformation;
 };
 
 class BasicMaterial {
@@ -176,6 +177,76 @@ private:
     ColorBounce deflectLocalRay(const Ray& ray) const noexcept override;
 
     AxisAlignedBox getLocalBoundingBox() const noexcept override;
+};
+
+// Required member functions of Derived:
+//  - float Derived::signedDistance(const Pos&) const noexcept;
+//  - AxisAlignedBox Derived::localBoundingBox() const noexcept;
+template<typename Derived>
+class SDFObjectCRTP : public Object {
+public:
+    SDFObjectCRTP(BasicMaterial mat)
+        : material(mat) {
+
+    }
+
+    BasicMaterial material;
+
+private:
+    inline std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override {
+        const auto self = static_cast<const Derived*>(this);
+        const auto bb = self->localBoundingBox();
+        auto p0 = std::optional<Pos>{};
+        if (inside(ray.pos, bb)) {
+            p0 = ray.pos;
+        } else {
+            p0 = intersect(ray, bb);
+        }
+        if (!p0.has_value()) {
+            return std::nullopt;
+        }
+        auto p = *p0;
+        auto d = self->signedDistance(p);
+        auto sign = d > 0.0f;
+        for (std::size_t i = 0; i < 256; ++i) {
+            auto d2 = self->signedDistance(p);
+            if ((d2 > 0.0f) != sign) {
+                d *= 0.5;
+                p -= d * ray.dir;
+                continue;
+            }
+            d = d2;
+            if (std::abs(d) < 1e-4f) {
+                return p;
+            }
+            p = p + d * ray.dir;
+            if (!inside(p, bb)) {
+                return std::nullopt;
+            }
+        }
+        return std::nullopt;
+    }
+
+    inline ColorBounce deflectLocalRay(const Ray& ray) const noexcept override {
+        const auto delta = 1e-3f;
+        // TODO: could probably use 4 points in something like a tetrahedral
+        // arrangement and some clever midpoint calculations, no?
+        const auto dx = Vec{delta, 0.0f, 0.0f};
+        const auto dy = Vec{0.0f, delta, 0.0f};
+        const auto dz = Vec{0.0f, 0.0f, delta};
+        const auto self = static_cast<const Derived*>(this);
+        const auto n = (Vec{
+            self->signedDistance(ray.pos + dx) - self->signedDistance(ray.pos - dx),
+            self->signedDistance(ray.pos + dy) - self->signedDistance(ray.pos - dy),
+            self->signedDistance(ray.pos + dz) - self->signedDistance(ray.pos - dz)
+        } / delta).unit();
+
+        return material.deflect(ray.dir,n);
+    }
+
+    inline AxisAlignedBox getLocalBoundingBox() const noexcept override {
+        return static_cast<const Derived*>(this)->localBoundingBox();
+    }
 };
 
 class FractalObject : public Object {

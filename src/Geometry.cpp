@@ -5,7 +5,7 @@
 
 namespace {
     constexpr float pi = 3.141592653589793f;
-    constexpr float epsilon = 1e-6f;
+    constexpr float epsilon = 1e-3f;
 }
 
 Triangle::Triangle(Pos _a, Pos _b, Pos _c) noexcept
@@ -25,7 +25,7 @@ float Triangle::area() const noexcept {
 
 Sphere::Sphere(float _radius) noexcept
     : radius(_radius) {
-    assert(radius > epsilon);
+    assert(radius > 0.0f);
 }
 
 float Sphere::surfaceArea() const noexcept {
@@ -34,6 +34,10 @@ float Sphere::surfaceArea() const noexcept {
 
 float Sphere::volume() const noexcept {
     return (4.0f / 3.0f) * pi * radius * radius * radius;
+}
+
+float Sphere::signedDistance(Pos p) const noexcept {
+    return p.toVec().norm() - radius;
 }
 
 Vec Sphere::normal(Pos p) const noexcept {
@@ -57,6 +61,17 @@ float Rectangle::surfaceArea() const noexcept {
 
 float Rectangle::volume() const noexcept {
     return halfSize.x * halfSize.y * halfSize.z * 8.0f;
+}
+
+float Rectangle::signedDistance(Pos p) const noexcept {
+    const auto dx = std::abs(p.x) - this->halfSize.x;
+    const auto dy = std::abs(p.y) - this->halfSize.y;
+    const auto dz = std::abs(p.z) - this->halfSize.z;
+    return Vec(
+        std::max(dx, 0.0f),
+        std::max(dy, 0.0f),
+        std::max(dz, 0.0f)
+    ).norm() + std::min(std::max(std::max(dx, dy), dz), 0.0f);
 }
 
 Vec Rectangle::normal(Pos p) const noexcept {
@@ -167,7 +182,7 @@ std::optional<Pos> intersect(const Ray& ray, const Sphere& sphere) noexcept {
     const auto sqrtDisc = std::sqrt(disc);
     const auto t0 = (-b - sqrtDisc) / (2.0f * a);
     const auto t1 = (-b + sqrtDisc) / (2.0f * a);
-    const auto eps= 1e-3f;
+    const auto eps= epsilon;
     auto t = float{};
     if (t0 > eps) {
         if (t1 > eps) {
@@ -272,6 +287,17 @@ std::pair<float, float> randomPointInCircle() noexcept {
     }
 }
 
+std::pair<Vec, Vec> orthogonalPair(Vec v) noexcept {
+    v = v.unit();
+    const auto xAxis = Vec(1.0f, 0.0f, 0.0f);
+    const auto yAxis = Vec(0.0f, 1.0f, 0.0f);
+    const auto alignedToX = ((v ^ xAxis).normSquared() < 0.1);
+    const auto w = alignedToX ? yAxis : xAxis;
+    const auto v1 = w ^ v;
+    const auto v2 = v1 ^ v;
+    return std::make_pair(v1.unit(), v2.unit()); // HACK: why are these vectors slightly not unit?
+}
+
 Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
     normal = normal.unit();
     const auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
@@ -279,8 +305,8 @@ Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
         auto x = dist(randomEngine());
         auto y = dist(randomEngine());
         auto z = dist(randomEngine());
-        const auto l = std::sqrt(x * x + y * y + z * z);
-        if (l > 1.0f || l < epsilon) {
+        const auto lSqr = (x * x) + (y * y) + (z * z);
+        if (lSqr > 1.0f || lSqr < epsilon) {
             continue;
         }
         auto v = Vec(x, y, z);
@@ -288,6 +314,29 @@ Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
             continue;
         }
         return v.unit();
+    }
+}
+
+Vec randomPointOnHemisphereCosine(Vec normal) noexcept {
+    normal = normal.unit();
+    const auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+    while (true) {
+        auto x = dist(randomEngine());
+        auto y = dist(randomEngine());
+        const auto lSqr = (x * x) + (y * y);
+        if (lSqr > 1.0f) {
+            continue;
+        }
+        const auto z = std::sqrt(1.0f - lSqr);
+        const auto [v1, v2] = orthogonalPair(normal);
+        assert(std::abs(normal * v1) < epsilon);
+        assert(std::abs(normal * v2) < epsilon);
+        assert(std::abs(v1 * v2) < epsilon);
+        assert(std::abs(normal.norm() - 1.0f) < epsilon);
+        assert(std::abs(v1.norm() - 1.0f) < epsilon);
+        assert(std::abs(v2.norm() - 1.0f) < epsilon);
+        assert(std::abs(Vec(x, y, z).norm() - 1.0f) < epsilon);
+        return (z * normal) + (x * v1) + (y * v2);
     }
 }
 

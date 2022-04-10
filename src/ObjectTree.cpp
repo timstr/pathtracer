@@ -20,57 +20,46 @@ namespace ObjectTree {
     }
 
     std::optional<std::pair<Pos, const Object*>> InternalNode::hit(const Ray& ray) const noexcept {
-        const auto pa = intersect(ray, m_childA->boundingBox);
-        const auto pb = intersect(ray, m_childB->boundingBox);
-        if (pa.has_value()) {
-            // Bounding box A was hit
-            const auto ta = ((*pa) - ray.pos) * ray.dir;
-            assert(ta >= 0.0f);
-            if (pb.has_value()) {
-                // Bounding box B was hit
-                const auto tb = ((*pb) - ray.pos) * ray.dir;
-                assert(tb >= 0.0f);
-
-                const auto aIsCloser = ta < tb;
-                const auto& near = aIsCloser ? m_childA : m_childB;
-                const auto& far = aIsCloser ? m_childB : m_childA;
-
-                const auto pn = near->hit(ray);
-                if (pn.has_value()) {
-                    // near object was hit
-                    assert(inside(pn->first, near->boundingBox));
-                    // NOTE: because both objects' bounding boxes intercept the ray, both need to be fully checked
-                    // near object is also inside far bounding box, so far object might also be hit
-                    const auto pf = far->hit(ray);
-                    if (pf.has_value()) {
-                        assert(inside(pf->first, far->boundingBox));
-                        // far object was hit
-                        const auto cn = (pn->first - ray.pos) * ray.dir;
-                        const auto cf = (pf->first - ray.pos) * ray.dir;
-                        assert(cn >= 0.0f);
-                        assert(cf >= 0.0f);
-                        if (cf < cn) {
-                            // far object is closer than near object
-                            return pf;
+        // auto pa = std::optional<Pos>{};
+        // if (inside(ray.pos, m_childA->boundingBox)) {
+        //     pa = ray.pos;
+        // } else {
+        //     pa = intersect(ray, m_childA->boundingBox);
+        // }
+        // 
+        // auto pb = std::optional<Pos>{};
+        // if (inside(ray.pos, m_childB->boundingBox)) {
+        //     pb = ray.pos;
+        // } else {
+        //     pb = intersect(ray, m_childB->boundingBox);
+        // }
+        // 
+        // if (pa.has_value()) {
+        //     if (pb.has_value()) {
+                const auto hitA = m_childA->hit(ray);
+                const auto hitB = m_childB->hit(ray);
+                if (hitA.has_value()) {
+                    if (hitB.has_value()) {
+                        const auto ta = (hitA->first - ray.pos) * ray.dir;
+                        const auto tb = (hitB->first - ray.pos) * ray.dir;
+                        if (tb < ta) {
+                            return hitB;
                         }
                     }
-                    return pn;
-                } else {
-                    // Near object was not hit
-                    return far->hit(ray);
+                    // hitB == nullopt or hitB is further
+                    return hitA;
                 }
-            } else {
-                // Bounding box A was hit but bounding box B was not hit
-                return m_childA->hit(ray);
-            }
-        } else {
-            // Bounding box A was not hit
-            if (pb.has_value()) {
-                return m_childB->hit(ray);
-            } else {
-                return std::nullopt;
-            }
-        }
+                // hitA == nullopt
+                return hitB;
+        //     }
+        //     // pb == nullopt
+        //     return m_childA->hit(ray);
+        // }
+        // // pa == nullopt
+        // if (pb.has_value()) {
+        //     return m_childB->hit(ray);
+        // }
+        // return std::nullopt;
     }
 
     LeafNode::LeafNode(const Object* object) noexcept
@@ -120,14 +109,14 @@ namespace ObjectTree {
         auto bestSplitDim = Dimension{nullptr};
         auto bestSplitIndex = std::optional<std::size_t>{};
         auto bestCost = std::numeric_limits<float>::max();
-        
+
         const auto computeBestSplit = [&](Dimension dim) {
             for (std::size_t i = 1; i < objects.size(); ++i) {
                 const auto bb = objects[i]->getBoundingBox();
                 const auto m = bb.center.*dim;
 
                 // Bounding boxes containing partitions about current object
-                auto bba = std::optional<AxisAlignedBox>{}; 
+                auto bba = std::optional<AxisAlignedBox>{};
                 auto bbb = std::optional<AxisAlignedBox>{};
 
                 for (std::size_t j = 0; j < objects.size(); ++j) {
@@ -147,8 +136,8 @@ namespace ObjectTree {
 
                 const auto va = Rectangle{bba->halfSize}.volume();
                 const auto vb = Rectangle{bbb->halfSize}.volume();
-                assert(va > 1e-6f);
-                assert(vb > 1e-6f);
+                assert(va > 0.0f);
+                assert(vb > 0.0f);
                 const auto vInner = va + vb;
                 const auto vTotal = Rectangle{boxContaining(*bba, *bbb).halfSize}.volume();
                 assert(vTotal > 1e-6f);
