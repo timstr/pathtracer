@@ -1,6 +1,6 @@
 #include <ObjectTree.hpp>
 
-#include <PathTracer.hpp>
+#include <Object.hpp>
 
 #include <cassert>
 

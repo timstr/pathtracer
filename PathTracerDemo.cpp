@@ -1,5 +1,17 @@
-#include <PathTracer.hpp>
+// To silence warning C4996: 'localtime': This function or variable may be
+// unsafe. Consider using localtime_s instead. To disable deprecation, use
+// _CRT_SECURE_NO_WARNINGS.
+#define _CRT_SECURE_NO_WARNINGS
+
+#include <Camera.hpp>
+#include <Geometry.hpp>
+#include <Image.hpp>
+#include <LinearAlgebra.hpp>
+#include <Object.hpp>
 #include <RandomNumberGenerator.hpp>
+#include <Renderer.hpp>
+#include <RenderSettings.hpp>
+#include <Scene.hpp>
 
 #include <SFML/Graphics.hpp>
 

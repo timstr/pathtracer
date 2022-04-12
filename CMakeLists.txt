@@ -12,19 +12,37 @@ if (NOT SFML_FOUND)
 endif()
 
 set(pathtracer_headers
-    include/LinearAlgebra.hpp
+    include/BasicMaterial.hpp
+    include/Camera.hpp
+    include/Color.hpp
+    include/ColorBounce.hpp
     include/Geometry.hpp
+    include/Image.hpp
+    include/LinearAlgebra.hpp
+    include/Object.hpp
     include/ObjectTree.hpp
-    include/PathTracer.hpp
     include/RandomNumberGenerator.hpp
+    include/Renderer.hpp
+    include/RenderSettings.hpp
+    include/Scene.hpp
+    include/ToneMapper.hpp
 )
 
 set(pathtracer_srcs
-    src/LinearAlgebra.cpp
+    src/BasicMaterial.cpp
+    src/Camera.cpp
+    src/Color.cpp
+    src/ColorBounce.cpp
     src/Geometry.cpp
+    src/Image.cpp
+    src/LinearAlgebra.cpp
+    src/Object.cpp
     src/ObjectTree.cpp
-    src/PathTracer.cpp
     src/RandomNumberGenerator.cpp
+    src/Renderer.cpp
+    src/RenderSettings.cpp
+    src/Scene.cpp
+    src/ToneMapper.cpp
 )
 
 add_library(pathtracer STATIC ${pathtracer_headers} ${pathtracer_srcs})
@@ -73,6 +91,8 @@ if(MSVC)
     set(
         CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /O2 /fp:fast /GL"
     )
+
+    set_property(TARGET pathtracerdemo APPEND PROPERTY LINK_FLAGS /LTCG)
 else()
 	SET(CMAKE_CXX_FLAGS -pthread)
 endif()
