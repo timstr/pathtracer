@@ -140,7 +140,7 @@ private:
             if (std::abs(d) < 1e-4f) {
                 return p;
             }
-            p = p + d * ray.dir;
+            p = p + std::abs(d) * ray.dir;
             if (!inside(p, bb)) {
                 return std::nullopt;
             }

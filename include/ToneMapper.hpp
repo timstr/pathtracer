@@ -2,14 +2,12 @@
 
 #include <Image.hpp>
 
-class ToneMapper {
+class ReinhardToneMapper{
 public:
-    virtual ~ToneMapper() noexcept = default;
-
-    virtual Image operator()(const Image&) const noexcept = 0;
+    Image operator()(const Image&) const noexcept;
 };
 
-class ReinhardToneMapper : public ToneMapper {
+class FilmicToneMapper {
 public:
-    virtual Image operator()(const Image&) const noexcept override final;
+    Image operator()(const Image&) const noexcept;
 };

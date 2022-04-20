@@ -67,7 +67,6 @@ Ray Camera::getViewRay(float screenX, float screenY) const noexcept {
     const auto y = screenY * 2.0f - 1.0f;
     const auto sp = m_aspectRatio > 1.0f ? Pos(x, y / m_aspectRatio) : Pos(x * m_aspectRatio, y);
     const auto dist = std::uniform_real_distribution<float>(0.0f, 1.0f);
-    const auto blurAngle = 2.0f * 3.141592654f * dist(randomEngine());
 
     const auto [randX, randY] = randomPointInCircle();
     const auto blurRad = m_focalBlurRadius * std::max(m_aspectRatio, 1.0f / m_aspectRatio);

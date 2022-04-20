@@ -104,9 +104,9 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
             // Refraction to outside
             // TODO: diffuse/specular scatter
             return ColorBounce {
-                Color{1.0f, 0.0f, 1.0f}, // TODO: emitted color?
+                Color{0.0f, 0.0f, 0.0f}, // TODO: emitted color?
                 Color{1.0f, 1.0f, 1.0f}, // TODO: internal absorption (requires knowing distance traveled)
-                inbound, // TODO: this is not refraction
+                v,
                 normal
             };
         } else {

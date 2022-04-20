@@ -66,8 +66,8 @@ void Renderer::doWork() const noexcept {
         const auto& scene = *m_renderData->scene;
         const auto& settings = *m_renderData->settings;
         auto& img = *m_renderData->image;
-        assert(settings.width == img.width());
-        assert(settings.height == img.height());
+        assert(settings.width() == img.width());
+        assert(settings.height() == img.height());
 
         const auto maxWidth = static_cast<float>(settings.width() - 1);
         const auto maxHeight = static_cast<float>(settings.height() - 1);
@@ -169,4 +169,8 @@ Image Renderer::render(
     m_renderData.reset();
 
     return img;
+}
+
+void Renderer::cancelRender() noexcept {
+    m_nextTaskIndex.store(std::numeric_limits<size_t>::max() - m_threadPool.size());
 }

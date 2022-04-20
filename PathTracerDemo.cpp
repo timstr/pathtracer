@@ -12,17 +12,26 @@
 #include <Renderer.hpp>
 #include <RenderSettings.hpp>
 #include <Scene.hpp>
+#include <ToneMapper.hpp>
 
 #include <SFML/Graphics.hpp>
 
 #include <cassert>
 #include <ctime>
+#include <functional>
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 
 float triangle(float x) noexcept {
     return 2.0f * std::abs(x - std::floor(x + 0.5f));
+}
+
+template<typename T>
+float hashf(T t) {
+    const auto h = std::hash<T>{}(t) % std::size_t{0xff};
+    const auto v = 3.141592654f / static_cast<float>(h);
+    return v - std::floor(v);
 }
 
 const Affine& noiseTransform() noexcept {
@@ -148,7 +157,17 @@ public:
     }
 };
 
-void copyToSFImage(const Image& src, sf::Image& dst, float k) {
+Image scaleImage(const Image& img, float k) noexcept {
+    auto ret = Image(img.width(), img.height());
+    for (std::size_t j = 0; j < img.height(); ++j) {
+        for (std::size_t i = 0; i < img.width(); ++i) {
+            ret(i, j) = k * img(i, j);
+        }
+    }
+    return ret;
+}
+
+void copyToSFImage(const Image& src, sf::Image& dst) {
     auto s = dst.getSize();
     if (s.x != src.width() || s.y != src.height()) {
         dst.create(
@@ -160,7 +179,7 @@ void copyToSFImage(const Image& src, sf::Image& dst, float k) {
     assert(dst.getSize().y == src.height());
     for (unsigned x = 0; x < src.width(); ++x) {
         for (unsigned y = 0; y < src.height(); ++y) {
-            auto color = k * src(x, y);
+            auto color = src(x, y);
             auto px = sf::Color(
                 static_cast<std::uint8_t>(std::clamp(color.r, 0.0f, 1.0f) * 255.0f),
                 static_cast<std::uint8_t>(std::clamp(color.g, 0.0f, 1.0f) * 255.0f),
@@ -170,6 +189,7 @@ void copyToSFImage(const Image& src, sf::Image& dst, float k) {
         }
     }
 }
+
 
 int main() {
 
@@ -515,7 +535,9 @@ int main() {
             count += 1;
             {
                 auto texLock = std::lock_guard{textureMutex};
-                copyToSFImage(acc, img, 1.0f / static_cast<float>(count));
+                auto scaled = scaleImage(acc, 1.0f / static_cast<float>(count));
+                auto mapped = FilmicToneMapper{}(scaled);
+                copyToSFImage(scaled, img);
                 tex.loadFromImage(img);
             }
         }
@@ -527,6 +549,7 @@ int main() {
         while (window.pollEvent(event)) {
             if (event.type == sf::Event::Closed) {
                 running = false;
+                r.cancelRender();
             } else if (event.type == sf::Event::Resized) {
                 const auto widthF = static_cast<float>(event.size.width);
                 const auto heightF = static_cast<float>(event.size.height);
@@ -545,6 +568,7 @@ int main() {
                 );
                 renderSettings.store(settingsCopy);
                 renderReset.store(true);
+                r.cancelRender();
             } else if (event.type == sf::Event::KeyPressed) {
                 auto delta = Vec(0.0f, 0.0f, 0.0f);
                 switch (event.key.code) {
@@ -565,6 +589,7 @@ int main() {
                         }
                         camera.store(cameraCopy);
                         renderReset.store(true);
+                        r.cancelRender();
                         break;
                     }
                     case sf::Keyboard::Key::Equal: {
@@ -576,6 +601,7 @@ int main() {
                         }
                         camera.store(cameraCopy);
                         renderReset.store(true);
+                        r.cancelRender();
                         break;
                     }
                     case sf::Keyboard::Key::Enter: {
@@ -617,6 +643,7 @@ int main() {
                     }
                     camera.store(cameraCopy);
                     renderReset.store(true);
+                    r.cancelRender();
                 }
             }
         }
@@ -624,13 +651,13 @@ int main() {
             break;
         }
 
+        window.clear();
         {
             auto lock = std::lock_guard{textureMutex};
-            window.clear();
             const auto spr = sf::Sprite(tex);
             window.draw(spr);
-            window.display();
         }
+        window.display();
     }
 
     done.store(true);

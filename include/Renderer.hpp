@@ -28,6 +28,8 @@ public:
 
     Image render(const Scene&, const Camera&, const RenderSettings&);
 
+    void cancelRender() noexcept;
+
 private:
     mutable std::mutex m_mutex;
     mutable std::optional<std::barrier<>> m_renderBarrierMaybe;
