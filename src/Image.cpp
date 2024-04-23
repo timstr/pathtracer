@@ -1,6 +1,7 @@
 #include <Image.hpp>
 
 #include <cassert>
+#include <climits>
 #include <fstream>
 
 Image::Image(std::size_t width, std::size_t height)

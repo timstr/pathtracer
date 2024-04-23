@@ -122,7 +122,7 @@ ColorBounce BasicMaterial::deflect(const Vec& inbound, const Vec& normal) const 
 
     const auto reflection = m_diffuseReflection + m_specularReflection;
     const auto options = reflection + m_transmittance;
-    const auto dist = std::uniform_real_distribution<float>{0.0f, options};
+    auto dist = std::uniform_real_distribution<float>{0.0f, options};
     const auto which = dist(randomEngine());
     if (which < reflection){
         // Reflection

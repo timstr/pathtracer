@@ -4,8 +4,8 @@ project(pathtracer CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 
-set(SFML_STATIC_LIBRARIES TRUE)
-find_package(SFML 2.4 COMPONENTS system window graphics audio main REQUIRED)
+# set(SFML_STATIC_LIBRARIES TRUE)
+find_package(SFML 2.4 COMPONENTS system window graphics audio REQUIRED)
 
 if (NOT SFML_FOUND)
 	message(FATAL_ERROR "Could not find SFML. Please install SFML.")
@@ -59,7 +59,7 @@ target_link_libraries(pathtracerdemo
 	PUBLIC sfml-window
 	PUBLIC sfml-graphics
 	PUBLIC sfml-audio
-	PUBLIC sfml-main
+	#	PUBLIC sfml-main
 )
 
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT pathtracerdemo)

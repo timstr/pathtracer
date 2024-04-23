@@ -5,6 +5,7 @@
 #include <Geometry.hpp>
 #include <LinearAlgebra.hpp>
 
+#include <cmath>
 #include <optional>
 
 class Object {
@@ -113,6 +114,22 @@ public:
 
     BasicMaterial material;
 
+protected:
+    Vec signedDistanceNormal(const Pos& pos) const noexcept {
+        const auto delta = 1e-3f;
+        // TODO: could probably use 4 points in something like a tetrahedral
+        // arrangement and some clever midpoint calculations, no?
+        const auto dx = Vec{delta, 0.0f, 0.0f};
+        const auto dy = Vec{0.0f, delta, 0.0f};
+        const auto dz = Vec{0.0f, 0.0f, delta};
+        const auto self = static_cast<const Derived*>(this);
+        return (Vec{
+            self->signedDistance(pos + dx) - self->signedDistance(pos - dx),
+            self->signedDistance(pos + dy) - self->signedDistance(pos - dy),
+            self->signedDistance(pos + dz) - self->signedDistance(pos - dz)
+        } / delta).unit();
+    }
+
 private:
     inline std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override {
         const auto self = static_cast<const Derived*>(this);
@@ -149,20 +166,8 @@ private:
     }
 
     inline ColorBounce deflectLocalRay(const Ray& ray) const noexcept override {
-        const auto delta = 1e-3f;
-        // TODO: could probably use 4 points in something like a tetrahedral
-        // arrangement and some clever midpoint calculations, no?
-        const auto dx = Vec{delta, 0.0f, 0.0f};
-        const auto dy = Vec{0.0f, delta, 0.0f};
-        const auto dz = Vec{0.0f, 0.0f, delta};
-        const auto self = static_cast<const Derived*>(this);
-        const auto n = (Vec{
-            self->signedDistance(ray.pos + dx) - self->signedDistance(ray.pos - dx),
-            self->signedDistance(ray.pos + dy) - self->signedDistance(ray.pos - dy),
-            self->signedDistance(ray.pos + dz) - self->signedDistance(ray.pos - dz)
-        } / delta).unit();
-
-        return material.deflect(ray.dir,n);
+        const auto n = this->signedDistanceNormal(ray.pos);
+        return material.deflect(ray.dir, n);
     }
 
     inline AxisAlignedBox getLocalBoundingBox() const noexcept override {

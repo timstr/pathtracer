@@ -1,6 +1,7 @@
 #include <ColorBounce.hpp>
 
 #include <cassert>
+#include <cmath>
 
 ColorBounce::ColorBounce(
     Color emitted,

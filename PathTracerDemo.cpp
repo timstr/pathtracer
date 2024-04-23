@@ -77,21 +77,62 @@ float smin(float a, float b, float k) noexcept {
 
 class RoughSphereObject : public SDFObjectCRTP<RoughSphereObject> {
 public:
-    RoughSphereObject(Sphere geometry, BasicMaterial mat)
-        : SDFObjectCRTP(mat)
-        , m_geometry(geometry) {
+    RoughSphereObject(Sphere geometry, BasicMaterial mat1, BasicMaterial mat2)
+        : SDFObjectCRTP(mat1)
+        , m_geometry(geometry)
+        , m_material2(mat2) {
 
     }
 
+    float signedDistanceCraters(const Pos& pos) const noexcept {
+        return std::max(0.0f, -1.0f + 3.0f * noise((1.0f * pos.toVec()).toPos()));
+    }
+
+    float signedDistanceBumps(const Pos& pos) const noexcept {
+        return -0.15f + 0.5f * noise((4.0f * pos.toVec()).toPos());
+    }
 
     float signedDistance(const Pos& pos) const noexcept {
         const auto r = 0.8f * m_geometry.radius;
         const auto sdBox = Rectangle(Vec(r, r, r)).signedDistance(pos);
         const auto sdSphere = m_geometry.signedDistance(pos);
         const auto sd = smin(sdBox, sdSphere, 8.0f);
-        const auto craters = std::max(0.0f, -1.0f + 3.0f * noise((1.0f * pos.toVec()).toPos()));
-        const auto bumps = -0.15f + 0.5f * noise((4.0f * pos.toVec()).toPos());
-        return smin(sd + craters, sd + craters + bumps, 32.0f);
+        const auto craters = this->signedDistanceCraters(pos);
+        const auto bumps = this->signedDistanceBumps(pos);
+        // return smin(sd + craters, sd + craters + bumps, 32.0f);
+        return std::min(sd + craters, sd + craters + bumps);
+    }
+
+    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override {
+        const auto n = this->signedDistanceNormal(ray.pos);
+        auto m = this->material;
+        auto noise1 = this->signedDistanceNormal((-ray.pos.toVec() * 1.724674f + Vec(3.474577f, 1.734674f, 2.713652f)).toPos());
+        auto noise2 = this->signedDistanceNormal(( ray.pos.toVec() * 2.446744f + Vec(1.734674f, 2.713652f, 4.137371f)).toPos());
+        // const auto noise1 = this->signedDistanceNormal(ray.pos);
+
+        noise1 = Vec(0.5f, 0.5f, 0.5f) + 0.5f * noise1;
+        noise2 = Vec(0.5f, 0.5f, 0.5f) + 0.5f * noise2;
+
+        m.setReflectedAbsorption(Color(noise1.x, noise1.y, noise1.z));
+        m.setDiffuseReflection(noise2.x);
+        m.setSpecularReflection(1.0f - noise2.x);
+        m.setSpecularSharpness(noise2.y);
+        m.setEmittedLuminance(0.125f * noise2.z * m.reflectedAbsorption());
+        return m.deflect(ray.dir, n);
+
+        // const auto craters = this->signedDistanceCraters(ray.pos);
+        // const auto bumps = this->signedDistanceBumps(ray.pos);
+        // if (craters < bumps) {
+        //     return this->material.deflect(ray.dir, n);
+        // }
+        // return this->m_material2.deflect(ray.dir, n);
+
+        // return ColorBounce(
+        //     Color(1.0f, 0.0f, 1.0f),
+        //     Color(0.0f, 0.0f, 0.0f),
+        //     bounce(ray.dir, n),
+        //     n
+        // );
     }
 
     AxisAlignedBox localBoundingBox() const noexcept {
@@ -103,6 +144,7 @@ public:
 
 private:
     Sphere m_geometry;
+    BasicMaterial m_material2;
 };
 
 class RoughBoxObject : public SDFObjectCRTP<RoughBoxObject> {
@@ -115,7 +157,8 @@ public:
 
 
     float signedDistance(const Pos& pos) const noexcept {
-        return m_geometry.signedDistance(pos) + 0.2f * noise((10.0f * pos.toVec()).toPos());
+        // return m_geometry.signedDistance(pos) + 0.1f * noise((50.0f * pos.toVec()).toPos());
+        return m_geometry.signedDistance(pos) - 0.01f;
     }
 
     AxisAlignedBox localBoundingBox() const noexcept {
@@ -196,118 +239,120 @@ int main() {
     auto s = Scene{};
 
     // Random spheres
-    {
-        const auto pdist = std::uniform_real_distribution<float>{0.0f, 1.0f};
-        const auto sdist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
-        for (std::size_t i = 0; i < 50; ++i) {
-            const auto geom = Sphere{
-                0.1f + 0.4f * pdist(randomEngine())
-            };
-            // const auto geom = 0.1f + 0.4f * pdist(randomEngine());
-            auto m = BasicMaterial{};
-            m.setDiffuseReflection(1.0f);
-            m.setSpecularReflection(0.0f);
-            m.setTransmittance(0.0f);
-            const auto k = 30.0f * std::pow(pdist(randomEngine()), 3.0f);
-            m.setEmittedLuminance(Color{
-                k * pdist(randomEngine()),
-                k * pdist(randomEngine()),
-                k * pdist(randomEngine())
-            });
-            auto& sphere = s.addObject<SphereObject>(geom, m);
-            sphere.setTransformation(Affine::Translation(Vec{
-                10.0f * sdist(randomEngine()),
-                10.0f * sdist(randomEngine()),
-                10.0f * sdist(randomEngine())
-            }));
-        }
-    }
+    // {
+    //     auto pdist = std::uniform_real_distribution<float>{0.0f, 1.0f};
+    //     auto sdist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+    //     for (std::size_t i = 0; i < 200; ++i) {
+    //         const auto geom = Sphere{
+    //             0.1f + 0.7f * pdist(randomEngine())
+    //         };
+    //         // const auto geom = 0.1f + 0.4f * pdist(randomEngine());
+    //         auto m = BasicMaterial{};
+    //         m.setDiffuseReflection(1.0f);
+    //         m.setSpecularReflection(0.0f);
+    //         m.setTransmittance(0.0f);
+    //         const auto k = 30.0f * std::pow(pdist(randomEngine()), 3.0f);
+    //         if (pdist(randomEngine()) > 0.9) {
+    //             m.setEmittedLuminance(Color{
+    //                 k * pdist(randomEngine()),
+    //                 k * pdist(randomEngine()),
+    //                 k * pdist(randomEngine())
+    //             });
+    //         }
+    //         auto& sphere = s.addObject<SphereObject>(geom, m);
+    //         sphere.setTransformation(Affine::Translation(Vec{
+    //             10.0f * sdist(randomEngine()),
+    //             10.0f * sdist(randomEngine()),
+    //             10.0f * sdist(randomEngine())
+    //         }));
+    //     }
+    // }
 
     // Cornell box
-    // {
-    //     auto matte = BasicMaterial();
-    //     matte.setDiffuseReflection(1.0f);
-    //     // matte.setEmittedLuminance(Color(0.1f, 0.1f, 0.1f));
-    //     matte.setEmittedLuminance(Color(0.0f, 0.0f, 0.0f));
-    //     matte.setSpecularReflection(0.0f);
-    //     matte.setTransmittance(0.0f);
+    {
+        auto matte = BasicMaterial();
+        matte.setDiffuseReflection(1.0f);
+        // matte.setEmittedLuminance(Color(0.1f, 0.1f, 0.1f));
+        matte.setEmittedLuminance(Color(0.0f, 0.0f, 0.0f));
+        matte.setSpecularReflection(0.0f);
+        matte.setTransmittance(0.0f);
 
-    //     auto matteRed = matte;
-    //     auto matteGreen = matte;
-    //     auto matteGray = matte;
-    //     auto matteWhite = matte;
-    //     matteRed.setReflectedAbsorption(Color(0.8f, 0.1f, 0.1f));
-    //     matteGreen.setReflectedAbsorption(Color(0.1f, 0.8f, 0.1f));
-    //     matteGray.setReflectedAbsorption(Color(0.2f, 0.2f, 0.3f));
-    //     matteWhite.setReflectedAbsorption(Color(1.0f, 1.0f, 1.0f));
+        auto matteRed = matte;
+        auto matteGreen = matte;
+        auto matteGray = matte;
+        auto matteWhite = matte;
+        matteRed.setReflectedAbsorption(Color(0.8f, 0.1f, 0.1f));
+        matteGreen.setReflectedAbsorption(Color(0.1f, 0.8f, 0.1f));
+        matteGray.setReflectedAbsorption(Color(0.2f, 0.2f, 0.3f));
+        matteWhite.setReflectedAbsorption(Color(1.0f, 1.0f, 1.0f));
 
-    //     auto glowing = matte;
-    //     auto antiGlowing = matte;
-    //     glowing.setEmittedLuminance(Color(50.0f, 40.0f, 30.0f));
-    //     antiGlowing.setEmittedLuminance(Color(-25.0f, -20.0f, -15.0f));
+        auto glowing = matte;
+        auto antiGlowing = matte;
+        glowing.setEmittedLuminance(Color(50.0f, 40.0f, 30.0f));
+        antiGlowing.setEmittedLuminance(Color(-25.0f, -20.0f, -15.0f));
 
-    //     auto mirror = matte;
-    //     mirror.setDiffuseReflection(0.05f);
-    //     mirror.setSpecularReflection(0.95f);
-    //     mirror.setSpecularSharpness(0.95f);
-    //     mirror.setReflectedAbsorption(Color(0.9f, 0.9f, 0.9f));
+        auto mirror = matte;
+        mirror.setDiffuseReflection(0.05f);
+        mirror.setSpecularReflection(0.95f);
+        mirror.setSpecularSharpness(0.95f);
+        mirror.setReflectedAbsorption(Color(0.9f, 0.9f, 0.9f));
 
-    //     const auto d = 0.01f;
+        const auto d = 0.01f;
 
-    //     auto& lightSource = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), glowing);
-    //     lightSource.setTransformation(Affine::Translation(Vec{0.0f, -5.0f + 2.0f * d, 0.0f}));
+        auto& lightSource = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), glowing);
+        lightSource.setTransformation(Affine::Translation(Vec{0.0f, -5.0f + 2.0f * d, 0.0f}));
 
-    //     auto& lightSink = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), antiGlowing);
-    //     lightSink.setTransformation(Affine::Translation(Vec{0.0f, 5.0f - 2.0f * d, 0.0f}));
+        // auto& lightSink = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), antiGlowing);
+        // lightSink.setTransformation(Affine::Translation(Vec{0.0f, 5.0f - 2.0f * d, 0.0f}));
 
-    //     auto& rearWall = s.addObject<BoxObject>(Rectangle(Vec{5.0f, 5.0f, d}), matteWhite);
-    //     rearWall.setTransformation(Affine::Translation(Vec{0.0f, 0.0f, 5.0f}));
+        auto& rearWall = s.addObject<BoxObject>(Rectangle(Vec{5.0f, 5.0f, d}), matteWhite);
+        rearWall.setTransformation(Affine::Translation(Vec{0.0f, 0.0f, 5.0f}));
 
-    //     auto& floor = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
-    //     floor.setTransformation(Affine::Translation(Vec{0.0f, 5.0f, 0.0f}));
+        auto& floor = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
+        floor.setTransformation(Affine::Translation(Vec{0.0f, 5.0f, 0.0f}));
 
-    //     // ceiling
-    //     auto& ceiling = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
-    //     ceiling.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
+        // ceiling
+        auto& ceiling = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
+        ceiling.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
 
-    //     // left wall
-    //     auto& leftWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteRed);
-    //     leftWall.setTransformation(Affine::Translation(Vec{-5.0f, 0.0f, 0.0f}));
+        // left wall
+        auto& leftWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteRed);
+        leftWall.setTransformation(Affine::Translation(Vec{-5.0f, 0.0f, 0.0f}));
 
-    //     // right wall
-    //     auto& rightWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteGreen);
-    //     rightWall.setTransformation(Affine::Translation(Vec{5.0f, 0.0f, 0.0f}));
+        // right wall
+        auto& rightWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteGreen);
+        rightWall.setTransformation(Affine::Translation(Vec{5.0f, 0.0f, 0.0f}));
 
-    //     // front box
-    //     // auto& box = s.addObject<BoxObject>(Rectangle(Vec{1.5f, 2.0, 1.5f}), matteWhite);
-    //     // box.setTransformation(Affine::Translation(Vec{-1.5f, 3.0f, 1.0f}) * Linear::RotationY(0.4136f));
-    //     // box.material.setReflectedAbsorption(Color(0.5f, 0.5f, 1.0f));
+        // front box
+        // auto& box = s.addObject<BoxObject>(Rectangle(Vec{1.5f, 2.0, 1.5f}), matteWhite);
+        // box.setTransformation(Affine::Translation(Vec{-1.5f, 3.0f, 1.0f}) * Linear::RotationY(0.4136f));
+        // box.material.setReflectedAbsorption(Color(0.5f, 0.5f, 1.0f));
 
-    //     auto& whiteSphere1 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
-    //     whiteSphere1.setTransformation(Affine::Translation(Vec{-3.0f, 3.5f, -2.5f}));
+        auto& whiteSphere1 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
+        whiteSphere1.setTransformation(Affine::Translation(Vec{-3.0f, 3.5f, -2.5f}));
 
-    //     auto& whiteSphere2 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
-    //     whiteSphere2.setTransformation(Affine::Translation(Vec{3.0f, -3.5f, -2.5f}));
+        auto& whiteSphere2 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
+        whiteSphere2.setTransformation(Affine::Translation(Vec{3.0f, -3.5f, -2.5f}));
 
-    //     auto& mirrorSphere1 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
-    //     mirrorSphere1.setTransformation(Affine::Translation(Vec{3.0f, 3.5f, 2.5f}));
+        auto& mirrorSphere1 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
+        mirrorSphere1.setTransformation(Affine::Translation(Vec{3.0f, 3.5f, 2.5f}));
 
-    //     auto& mirrorSphere2 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
-    //     mirrorSphere2.setTransformation(Affine::Translation(Vec{-3.0f, -3.5f, 2.5f}));
+        auto& mirrorSphere2 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
+        mirrorSphere2.setTransformation(Affine::Translation(Vec{-3.0f, -3.5f, 2.5f}));
 
-    //     // auto& fractal = s.addObject<FractalObject>();
-    //     // fractal.material = matteGray;
-    //     // fractal.material.setEmittedLuminance(Color(0.05f, 0.1f, 0.2f));
-    //     // fractal.material.setReflectedAbsorption(Color(0.2f, 0.4f, 0.8f));
-    //     // fractal.material.setDiffuseReflection(1.0f);
-    //     // fractal.material.setSpecularReflection(1.0f);
-    //     // fractal.setTransformation(
-    //     //     Affine::Translation(Vec{-1.5f, -1.0f, 1.0f})
-    //     //     // * Linear::RotationY(0.6f)
-    //     //     // * Linear::RotationX(0.3f)
-    //     //     // * Linear::Scale(1.5f)
-    //     // );
-    // }
+        // auto& fractal = s.addObject<FractalObject>();
+        // fractal.material = matteGray;
+        // fractal.material.setEmittedLuminance(Color(0.05f, 0.1f, 0.2f));
+        // fractal.material.setReflectedAbsorption(Color(0.2f, 0.4f, 0.8f));
+        // fractal.material.setDiffuseReflection(1.0f);
+        // fractal.material.setSpecularReflection(1.0f);
+        // fractal.setTransformation(
+        //     Affine::Translation(Vec{-1.5f, -1.0f, 1.0f})
+        //     // * Linear::RotationY(0.6f)
+        //     // * Linear::RotationX(0.3f)
+        //     // * Linear::Scale(1.5f)
+        // );
+    }
 
     // Globe of cubes (or glob of spheres)
     // {
@@ -319,8 +364,8 @@ int main() {
     //     };
 
 
-    //     const auto dist = std::uniform_real_distribution<float>{0.0f, 1.0f};
-    //     const auto sdist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+    //     auto dist = std::uniform_real_distribution<float>{0.0f, 1.0f};
+    //     auto sdist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
 
     //     for (std::size_t i = 0; i < res; ++i){
     //         const auto x = mapToSpace(i);
@@ -345,21 +390,27 @@ int main() {
 
     //                 auto m = BasicMaterial{};
     //                 if (dist(randomEngine()) < 0.9f) {
-    //                     m.setDiffuseReflection(1.0f);// * dist(randomEngine()));
-    //                     m.setSpecularReflection(0.0f);//1.0f * dist(randomEngine()));
-    //                     m.setSpecularSharpness(1.0f);//1.0f * dist(randomEngine()));
+    //                     m.setDiffuseReflection(0.05f);// * dist(randomEngine()));
+    //                     m.setSpecularReflection(0.95f);//1.0f * dist(randomEngine()));
+    //                     m.setSpecularSharpness(0.9f);//1.0f * dist(randomEngine()));
     //                     m.setTransmittance(0.0f);
-    //                     m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+    //                     m.setReflectedAbsorption(Color{1.0f, 0.9f, 0.2f});
     //                     m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
     //                 } else {
-    //                     m.setDiffuseReflection(0.02f);
-    //                     m.setSpecularReflection(0.3f);
-    //                     m.setSpecularSharpness(0.99f);
-    //                     m.setTransmittance(0.85f);
+    //                     m.setDiffuseReflection(0.9f);
+    //                     m.setSpecularReflection(0.1f);
+    //                     m.setSpecularSharpness(0.95f);
+    //                     m.setTransmittance(0.0f);
     //                     m.setIndexOfRefraction(1.55f);
-    //                     m.setReflectedAbsorption(Color{0.8f, 0.9f, 1.0f});
-    //                     m.setEmittedLuminance(Color{0.10f, 0.25f, 0.0f});
+    //                     m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+    //                     // m.setEmittedLuminance(Color{0.10f, 0.25f, 0.0f});
+    //                     m.setEmittedLuminance(Color{
+    //                         dist(randomEngine()),
+    //                         dist(randomEngine()),
+    //                         dist(randomEngine()),
+    //                     });
     //                 }
+    //                 // auto& b = s.addObject<BoxObject>(g, m);
     //                 auto& b = s.addObject<RoughBoxObject>(g, m);
     //                 // auto& b = s.addObject<RoughSphereObject>(g, m);
     //                 b.setTransformation(
@@ -378,35 +429,43 @@ int main() {
     // }
 
     // Just one sphere (or box)
-    {
-        const auto g = Sphere(4.0f);
-        // const auto g = Rectangle(Vec(1.0f, 1.0f, 1.0f));
-        // const auto g = 1.0f;
-        auto m = BasicMaterial{};
-        m.setDiffuseReflection(1.0f);
-        m.setSpecularReflection(0.0f);
-        m.setSpecularSharpness(1.0f);
-        m.setTransmittance(0.0f);
-        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
-        m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+    // {
+    //     const auto g = Sphere(4.0f);
+    //     // const auto g = Rectangle(Vec(1.0f, 1.0f, 1.0f));
+    //     // const auto g = 1.0f;
+    //     auto m1 = BasicMaterial{};
+    //     m1.setDiffuseReflection(1.0f);
+    //     m1.setSpecularReflection(0.0f);
+    //     m1.setSpecularSharpness(1.0f);
+    //     m1.setTransmittance(0.0f);
+    //     m1.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+    //     m1.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
 
-        auto& b = s.addObject<RoughSphereObject>(g, m);
-        //auto& b = s.addObject<SphereObject>(g, m);
-        // auto& b = s.addObject<BoxObject>(g, m);
-    }
+    //     auto m2 = BasicMaterial{};
+    //     m2.setDiffuseReflection(0.05f);// * dist(randomEngine()));
+    //     m2.setSpecularReflection(0.95f);//1.0f * dist(randomEngine()));
+    //     m2.setSpecularSharpness(0.9f);//1.0f * dist(randomEngine()));
+    //     m2.setTransmittance(0.0f);
+    //     m2.setReflectedAbsorption(Color{1.0f, 0.9f, 0.2f});
+    //     m2.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
 
-    // light source
-    {
-        auto m = BasicMaterial{};
-        m.setDiffuseReflection(1.0f);
-        m.setSpecularReflection(0.0f);
-        m.setTransmittance(0.0f);
-        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
-        m.setEmittedLuminance(Color{1.0f, 1.0f, 1.0f});
+    //     auto& b = s.addObject<RoughSphereObject>(g, m1, m2);
+    //     //auto& b = s.addObject<SphereObject>(g, m);
+    //     // auto& b = s.addObject<BoxObject>(g, m);
+    // }
 
-        auto& b = s.addObject<BoxObject>(Rectangle(Vec(100.0f, 0.1f, 100.0f)), m);
-        b.setTransformation(Affine::Translation(Vec{0.0f, -50.0f, 0.0f}));
-    }
+    // // light source
+    // {
+    //     auto m = BasicMaterial{};
+    //     m.setDiffuseReflection(1.0f);
+    //     m.setSpecularReflection(0.0f);
+    //     m.setTransmittance(0.0f);
+    //     m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+    //     m.setEmittedLuminance(Color{1.0f, 1.0f, 1.0f});
+
+    //     auto& b = s.addObject<BoxObject>(Rectangle(Vec(100.0f, 0.1f, 100.0f)), m);
+    //     b.setTransformation(Affine::Translation(Vec{0.0f, -50.0f, 0.0f}));
+    // }
 
     // Fractal
     /*{
@@ -468,32 +527,25 @@ int main() {
 
     s.updateGeometry();
 
-    auto camera = std::atomic<Camera>{[]{
-        auto c = Camera(Affine{});
-        c.setAspectRatio(1.0f);
-        c.setFieldOfView(10.0f);
-        c.setFocalDistance(30.0f);
-        c.setFocalBlurRadius(0.0f);//0.05f);
-        const auto T = Affine::Translation(0.0f, 0.0f, -30.0f) * Linear::Scale(0.01f);
-        c.setTransform(T);
-        return c;
-    }()};
+    auto camera = Camera(Affine{});
+    camera.setAspectRatio(1.0f);
+    camera.setFieldOfView(10.0f);
+    camera.setFocalDistance(30.0f);
+    camera.setFocalBlurRadius(0.0f);//0.05f);
+    const auto T = Affine::Translation(0.0f, 0.0f, -30.0f) * Linear::Scale(0.01f);
+    camera.setTransform(T);
 
-    auto renderSettings = std::atomic<RenderSettings>{[]{
-        auto s = RenderSettings(256, 256);
-        s.setNumBounces(8);
-        s.setSamplesPerPixel(1);
-        return s;
-    }()};
-
+    auto renderSettings = RenderSettings(256, 256);
+    renderSettings.setNumBounces(8);
+    renderSettings.setSamplesPerPixel(1);
 
     auto r = Renderer{};
     r.startThreadPool();
 
     auto window = sf::RenderWindow(
         sf::VideoMode(
-            static_cast<unsigned int>(renderSettings.load().width()),
-            static_cast<unsigned int>(renderSettings.load().height())
+            static_cast<unsigned int>(renderSettings.width()),
+            static_cast<unsigned int>(renderSettings.height())
         ),
         "Path Tracer"
     );
@@ -501,8 +553,8 @@ int main() {
     auto img = sf::Image();
     auto tex = sf::Texture();
     tex.create(
-        static_cast<unsigned int>(renderSettings.load().width()),
-        static_cast<unsigned int>(renderSettings.load().height())
+        static_cast<unsigned int>(renderSettings.width()),
+        static_cast<unsigned int>(renderSettings.height())
     );
 
 
@@ -510,23 +562,34 @@ int main() {
     auto renderReset = std::atomic<bool>{true};
     auto textureMutex = std::mutex{};
     auto renderMutex = std::mutex{};
+    auto cameraSettingsMutex = std::mutex{};
 
     auto renderThread = std::thread([&]{
         auto count = size_t{0};
-        auto localCamera = camera.load();
-        auto localSettings = renderSettings.load();
+        auto localCamera = Camera({});
+        auto localSettings = RenderSettings{};
+        {
+            auto lock = std::lock_guard{cameraSettingsMutex};
+            localCamera = camera;
+            localSettings = renderSettings;
+        }
         auto acc = Image(localSettings.width(), localSettings.height());
         while (!done.load()) {
             auto lock = std::lock_guard{renderMutex};
             if (renderReset.load()) {
-                auto texLock = std::lock_guard{textureMutex};
-                localCamera = camera.load();
-                localSettings = renderSettings.load();
-                tex.create(
-                    static_cast<unsigned>(localSettings.width()),
-                    static_cast<unsigned>(localSettings.height())
-                );
-                acc = Image(localSettings.width(), localSettings.height());
+                {
+                    auto settingsLock = std::lock_guard{cameraSettingsMutex};
+                    localCamera = camera;
+                    localSettings = renderSettings;
+                }
+                {
+                    auto texLock = std::lock_guard{textureMutex};
+                    tex.create(
+                        static_cast<unsigned>(localSettings.width()),
+                        static_cast<unsigned>(localSettings.height())
+                    );
+                    acc = Image(localSettings.width(), localSettings.height());
+                }
                 count = 0;
                 renderReset.store(false);
             }
@@ -556,17 +619,16 @@ int main() {
                 window.setView(sf::View(sf::FloatRect(
                     0.0f, 0.0f, widthF, heightF
                 )));
-                auto cameraCopy = camera.load();
-                cameraCopy.setAspectRatio(
-                    widthF / heightF
-                );
-                camera.store(cameraCopy);
-                auto settingsCopy = renderSettings.load();
-                settingsCopy.setSize(
-                    event.size.width,
-                    event.size.height
-                );
-                renderSettings.store(settingsCopy);
+                {
+                    auto settingsLock = std::lock_guard{cameraSettingsMutex};
+                    camera.setAspectRatio(
+                        widthF / heightF
+                    );
+                    renderSettings.setSize(
+                        event.size.width,
+                        event.size.height
+                    );
+                }
                 renderReset.store(true);
                 r.cancelRender();
             } else if (event.type == sf::Event::KeyPressed) {
@@ -579,27 +641,29 @@ int main() {
                     case sf::Keyboard::Key::Q: delta.y -= 1.0f; break;
                     case sf::Keyboard::Key::E: delta.y += 1.0f; break;
                     case sf::Keyboard::Key::Dash: {
-                        auto cameraCopy = camera.load();
-                        if (event.key.control) {
-                            cameraCopy.setFocalBlurRadius(
-                                std::max(0.0f, cameraCopy.focalBlurRadius() - 0.1f)
-                            );
-                        } else {
-                            cameraCopy.setFieldOfView(cameraCopy.fieldOfView() + 1.0f);
+                        {
+                            auto settingsLock = std::lock_guard{cameraSettingsMutex};
+                            if (event.key.control) {
+                                camera.setFocalBlurRadius(
+                                    std::max(0.0f, camera.focalBlurRadius() - 0.1f)
+                                );
+                            } else {
+                                camera.setFieldOfView(camera.fieldOfView() + 1.0f);
+                            }
                         }
-                        camera.store(cameraCopy);
                         renderReset.store(true);
                         r.cancelRender();
                         break;
                     }
                     case sf::Keyboard::Key::Equal: {
-                        auto cameraCopy = camera.load();
-                        if (event.key.control) {
-                            cameraCopy.setFocalBlurRadius(cameraCopy.focalBlurRadius() + 0.1f);
-                        } else {
-                            cameraCopy.setFieldOfView(cameraCopy.fieldOfView() - 1.0f);
+                        {
+                            auto settingsLock = std::lock_guard{cameraSettingsMutex};
+                            if (event.key.control) {
+                                camera.setFocalBlurRadius(camera.focalBlurRadius() + 0.1f);
+                            } else {
+                                camera.setFieldOfView(camera.fieldOfView() - 1.0f);
+                            }
                         }
-                        camera.store(cameraCopy);
                         renderReset.store(true);
                         r.cancelRender();
                         break;
@@ -625,11 +689,11 @@ int main() {
                     }
                 }
                 if (delta.norm() > 1e-3f) {
-                    auto cameraCopy = camera.load();
-                    auto& t = cameraCopy.transform();
+                    auto settingsLock = std::lock_guard{cameraSettingsMutex};
+                    auto& t = camera.transform();
                     if (event.key.control) {
-                        cameraCopy.setFocalDistance(
-                            cameraCopy.focalDistance() + 0.25f * delta.z
+                        camera.setFocalDistance(
+                            camera.focalDistance() + 0.25f * delta.z
                         );
                     } else if (event.key.shift) {
                         const auto k = 3.141592654f * 0.025f;
@@ -641,7 +705,6 @@ int main() {
                     } else {
                         t.translation += 10.0f * t.linear * delta;
                     }
-                    camera.store(cameraCopy);
                     renderReset.store(true);
                     r.cancelRender();
                 }

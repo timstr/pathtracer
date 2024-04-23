@@ -74,8 +74,8 @@ void Renderer::doWork() const noexcept {
         const auto sppInv = 1.0f / static_cast<float>(settings.samplesPerPixel());
         const auto deltaX = 1.0f / maxWidth;
         const auto deltaY = 1.0f / maxHeight;
-        const auto jitterX = std::uniform_real_distribution<float>{ -0.5f * deltaX, 0.5f * deltaX };
-        const auto jitterY = std::uniform_real_distribution<float>{ -0.5f * deltaY, 0.5f * deltaY };
+        auto jitterX = std::uniform_real_distribution<float>{ -0.5f * deltaX, 0.5f * deltaX };
+        auto jitterY = std::uniform_real_distribution<float>{ -0.5f * deltaY, 0.5f * deltaY };
         while (true) {
             const auto taskIndex = m_nextTaskIndex.fetch_add(1);
             auto taskMaybe = Renderer::makeTask(taskIndex, settings.width(), settings.height());

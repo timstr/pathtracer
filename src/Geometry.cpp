@@ -276,7 +276,7 @@ bool inside(const Pos& p, const AxisAlignedBox& b) noexcept {
 }
 
 std::pair<float, float> randomPointInCircle() noexcept {
-    const auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+    auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
     while (true) {
         auto x = dist(randomEngine());
         auto y = dist(randomEngine());
@@ -300,7 +300,7 @@ std::pair<Vec, Vec> orthogonalPair(Vec v) noexcept {
 
 Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
     normal = normal.unit();
-    const auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+    auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
     while (true) {
         auto x = dist(randomEngine());
         auto y = dist(randomEngine());
@@ -319,7 +319,7 @@ Vec randomPointOnHemisphereUniform(Vec normal) noexcept {
 
 Vec randomPointOnHemisphereCosine(Vec normal) noexcept {
     normal = normal.unit();
-    const auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
+    auto dist = std::uniform_real_distribution<float>{-1.0f, 1.0f};
     while (true) {
         auto x = dist(randomEngine());
         auto y = dist(randomEngine());
@@ -364,3 +364,4 @@ AxisAlignedBox::AxisAlignedBox(Pos _center, Vec _halfSize) noexcept
     assert(halfSize.y >= epsilon);
     assert(halfSize.z >= epsilon);
 }
+
