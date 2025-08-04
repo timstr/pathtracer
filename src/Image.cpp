@@ -2,7 +2,9 @@
 
 #include <cassert>
 #include <climits>
+#include <cstdint>
 #include <fstream>
+#include <SFML/Graphics/Image.hpp>
 
 Image::Image(std::size_t width, std::size_t height)
     : m_width(width)
@@ -44,7 +46,32 @@ namespace {
 
 } // anonymous namespace
 
-void Image::save(const std::string& path) const {
+Image Image::load(const std::string& path) {
+    auto sfimg = sf::Image();
+    if (!sfimg.loadFromFile(path)) {
+        throw std::runtime_error("Failed to load image from \"" + path + "\"");
+    }
+
+    const size_t w = sfimg.getSize().x;
+    const size_t h = sfimg.getSize().y;
+
+    auto img = Image(w, h);
+
+    for (std::size_t y = 0; y != h; ++y) {
+        for (std::size_t x = 0; x != w; ++x) {
+            auto sfcolor = sfimg.getPixel(x, y);
+            img(x, y) = Color(
+                static_cast<float>(sfcolor.r) / 255.0,
+                static_cast<float>(sfcolor.g) / 255.0,
+                static_cast<float>(sfcolor.b) / 255.0
+            );
+        }
+    }
+
+    return img;
+}
+
+void Image::saveUncompressed(const std::string& path) const {
     auto f = std::ofstream{path, std::ios::out | std::ios::binary};
     writeUInt64(f, width());
     writeUInt64(f, height());
@@ -58,8 +85,8 @@ void Image::save(const std::string& path) const {
     }
 }
 
-Image Image::load(const std::string& path) {
-    auto f = std::ifstream{path, std::ios::in| std::ios::binary};
+Image Image::loadUncompressed(const std::string& path) {
+    auto f = std::ifstream{path, std::ios::in | std::ios::binary};
     if (!f) {
         throw std::runtime_error("Failed to open file: \"" + path + "\"");
     }

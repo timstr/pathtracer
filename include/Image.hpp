@@ -13,8 +13,10 @@ public:
     std::size_t width() const noexcept;
     std::size_t height() const noexcept;
 
-    void save(const std::string& path) const;
     static Image load(const std::string& path);
+
+    void saveUncompressed(const std::string& path) const;
+    static Image loadUncompressed(const std::string& path);
 
     const Color& operator()(std::size_t x, std::size_t y) const noexcept;
     Color& operator()(std::size_t x, std::size_t y) noexcept;

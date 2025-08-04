@@ -157,38 +157,38 @@ AxisAlignedBox BoxObject::getLocalBoundingBox() const noexcept {
     };
 }
 
-std::optional<Pos> FractalObject::hitLocalRay(const Ray& ray) const noexcept {
-    const auto p0 = intersect(ray, getBoundingBox());
+// std::optional<Pos> FractalObject::hitLocalRay(const Ray& ray) const noexcept {
+//     const auto p0 = intersect(ray, getBoundingBox());
 
-    if (!p0.has_value()) {
-        return std::nullopt;
-    }
-    auto p = *p0;
-    for (std::size_t i = 0; i < 256; ++i) {
-        auto d = signedDistance(p);
-        if (d < 1e-3f) {
-            return p;
-        }
-        p = p + d * ray.dir;
-    }
-    return std::nullopt;
-}
+//     if (!p0.has_value()) {
+//         return std::nullopt;
+//     }
+//     auto p = *p0;
+//     for (std::size_t i = 0; i < 256; ++i) {
+//         auto d = signedDistance(p);
+//         if (d < 1e-3f) {
+//             return p;
+//         }
+//         p = p + d * ray.dir;
+//     }
+//     return std::nullopt;
+// }
 
-ColorBounce FractalObject::deflectLocalRay(const Ray& ray) const noexcept {
-    const auto delta = 1e-3f;
-    const auto dx = Vec{delta, 0.0f, 0.0f};
-    const auto dy = Vec{0.0f, delta, 0.0f};
-    const auto dz = Vec{0.0f, 0.0f, delta};
-    const auto n = (Vec{
-        signedDistance(ray.pos + dx) - signedDistance(ray.pos - dx),
-        signedDistance(ray.pos + dy) - signedDistance(ray.pos - dy),
-        signedDistance(ray.pos + dz) - signedDistance(ray.pos - dz)
-    } / delta).unit();
+// ColorBounce FractalObject::deflectLocalRay(const Ray& ray) const noexcept {
+//     // const auto delta = 1e-6f;
+//     // const auto dx = Vec{delta, 0.0f, 0.0f};
+//     // const auto dy = Vec{0.0f, delta, 0.0f};
+//     // const auto dz = Vec{0.0f, 0.0f, delta};
+//     // const auto n = (Vec{
+//     //     signedDistance(ray.pos + dx) - signedDistance(ray.pos - dx),
+//     //     signedDistance(ray.pos + dy) - signedDistance(ray.pos - dy),
+//     //     signedDistance(ray.pos + dz) - signedDistance(ray.pos - dz)
+//     // } / delta).unit();
 
-    return material.deflect(ray.dir,n);
-}
+//     return material.deflect(ray.dir, this->signedDistanceNormal(ray.pos));
+// }
 
-AxisAlignedBox FractalObject::getLocalBoundingBox() const noexcept {
+AxisAlignedBox FractalObject::localBoundingBox() const noexcept {
     return AxisAlignedBox{
         Pos{0.0f, 0.0f, 0.0f},
         Vec{2.0f, 2.0f, 2.0f}
@@ -196,7 +196,6 @@ AxisAlignedBox FractalObject::getLocalBoundingBox() const noexcept {
 }
 
 float FractalObject::signedDistance(const Pos& p) const noexcept {
-    /*
     // Mandelbulb
     const auto power = 8.0f;
 
@@ -204,7 +203,7 @@ float FractalObject::signedDistance(const Pos& p) const noexcept {
     auto dr = 1.0f;
     auto r = 0.0f;
 
-    for (int i = 0; i < 64; ++i) {
+    for (int i = 0; i < 14 /*64*/; ++i) {
         r = z.norm();
         if (r > 2.0f) {
             break;
@@ -225,29 +224,29 @@ float FractalObject::signedDistance(const Pos& p) const noexcept {
     const auto d = 0.5f * std::log(r) * r / dr;
 
     return d;
-    */
+    
     // 5 x 5 x 5 spheres
 
-    const auto f = [](float v) {
-        const auto l = 0.5f;
-        const auto r = 2.0f;
-        if (v < -l) {
-            return v + l;
-        } else if (v > l) {
-            return v - l;
-        } else {
-            v *= r;
-            return (v - std::round(v)) / r;
-        }
-    };
+    // const auto f = [](float v) {
+    //     const auto l = 0.5f;
+    //     const auto r = 2.0f;
+    //     if (v < -l) {
+    //         return v + l;
+    //     } else if (v > l) {
+    //         return v - l;
+    //     } else {
+    //         v *= r;
+    //         return (v - std::round(v)) / r;
+    //     }
+    // };
 
-    const auto v = Vec{
-        f(p.x),
-        f(p.y),
-        f(p.z)
-    };
+    // const auto v = Vec{
+    //     f(p.x),
+    //     f(p.y),
+    //     f(p.z)
+    // };
 
-    return v.norm() - 0.2f;
+    // return v.norm() - 0.2f;
 
 }
 

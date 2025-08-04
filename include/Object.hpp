@@ -107,7 +107,7 @@ private:
 template<typename Derived>
 class SDFObjectCRTP : public Object {
 public:
-    SDFObjectCRTP(BasicMaterial mat)
+    SDFObjectCRTP(BasicMaterial mat = {})
         : material(mat) {
 
     }
@@ -116,17 +116,18 @@ public:
 
 protected:
     Vec signedDistanceNormal(const Pos& pos) const noexcept {
-        const auto delta = 1e-3f;
+        const auto delta = 1e-4f;
         // TODO: could probably use 4 points in something like a tetrahedral
         // arrangement and some clever midpoint calculations, no?
         const auto dx = Vec{delta, 0.0f, 0.0f};
         const auto dy = Vec{0.0f, delta, 0.0f};
         const auto dz = Vec{0.0f, 0.0f, delta};
         const auto self = static_cast<const Derived*>(this);
+        const auto dist = self->signedDistance(pos);
         return (Vec{
-            self->signedDistance(pos + dx) - self->signedDistance(pos - dx),
-            self->signedDistance(pos + dy) - self->signedDistance(pos - dy),
-            self->signedDistance(pos + dz) - self->signedDistance(pos - dz)
+            self->signedDistance(pos + dx) - dist,
+            self->signedDistance(pos + dy) - dist,
+            self->signedDistance(pos + dz) - dist
         } / delta).unit();
     }
 
@@ -175,17 +176,16 @@ private:
     }
 };
 
-class FractalObject : public Object {
+class FractalObject : public SDFObjectCRTP<FractalObject> {
 public:
-    BasicMaterial material;
+    FractalObject() noexcept = default;
 
-private:
-    std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override;
+// private:
+//     std::optional<Pos> hitLocalRay(const Ray& ray) const noexcept override;
 
-    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override;
+//     ColorBounce deflectLocalRay(const Ray& ray) const noexcept override;
 
-    AxisAlignedBox getLocalBoundingBox() const noexcept override;
+    AxisAlignedBox localBoundingBox() const noexcept;
 
-private:
     float signedDistance(const Pos&) const noexcept;
 };

@@ -25,6 +25,7 @@ set(pathtracer_headers
     include/Renderer.hpp
     include/RenderSettings.hpp
     include/Scene.hpp
+    include/SkyBox.hpp
     include/ToneMapper.hpp
 )
 
@@ -42,6 +43,7 @@ set(pathtracer_srcs
     src/Renderer.cpp
     src/RenderSettings.cpp
     src/Scene.cpp
+    src/SkyBox.cpp
     src/ToneMapper.cpp
 )
 
@@ -94,5 +96,5 @@ if(MSVC)
 
     set_property(TARGET pathtracerdemo APPEND PROPERTY LINK_FLAGS /LTCG)
 else()
-	SET(CMAKE_CXX_FLAGS -pthread)
+	# SET(CMAKE_CXX_FLAGS -pthread)
 endif()
