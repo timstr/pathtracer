@@ -664,6 +664,8 @@ int main() {
     camera.setTransform(T);
 
     auto renderSettings = RenderSettings(256, 256);
+    // auto renderSettings = RenderSettings(4096, 4096);
+    // auto renderSettings = RenderSettings(2048, 2048);
     renderSettings.setNumBounces(8);
     renderSettings.setSamplesPerPixel(1);
 
@@ -742,26 +744,34 @@ int main() {
                 running = false;
                 r.cancelRender();
             } else if (event.type == sf::Event::Resized) {
-                const auto widthF = static_cast<float>(event.size.width);
-                const auto heightF = static_cast<float>(event.size.height);
-                window.setView(sf::View(sf::FloatRect(
-                    0.0f, 0.0f, widthF, heightF
-                )));
-                {
-                    auto settingsLock = std::lock_guard{cameraSettingsMutex};
-                    camera.setAspectRatio(
-                        widthF / heightF
-                    );
-                    renderSettings.setSize(
-                        event.size.width,
-                        event.size.height
-                    );
-                }
-                renderReset.store(true);
-                r.cancelRender();
+                // const auto widthF = static_cast<float>(event.size.width);
+                // const auto heightF = static_cast<float>(event.size.height);
+                // window.setView(sf::View(sf::FloatRect(
+                //     0.0f, 0.0f, widthF, heightF
+                // )));
+                // {
+                //     auto settingsLock = std::lock_guard{cameraSettingsMutex};
+                //     camera.setAspectRatio(
+                //         widthF / heightF
+                //     );
+                //     renderSettings.setSize(
+                //         event.size.width,
+                //         event.size.height
+                //     );
+                // }
+                // renderReset.store(true);
+                // r.cancelRender();
             } else if (event.type == sf::Event::KeyPressed) {
                 auto delta = Vec(0.0f, 0.0f, 0.0f);
                 switch (event.key.code) {
+                    case sf::Keyboard::Key::PageUp: {
+                        auto settingsLock = std::lock_guard{cameraSettingsMutex};
+                        // renderSettings.setSize(4096, 4096);
+                        renderSettings.setSize(8192, 8192);
+                        renderReset.store(true);
+                        r.cancelRender();
+                        break;
+                    }
                     case sf::Keyboard::Key::A: delta.x -= 1.0f; break;
                     case sf::Keyboard::Key::D: delta.x += 1.0f; break;
                     case sf::Keyboard::Key::S: delta.z -= 1.0f; break;
