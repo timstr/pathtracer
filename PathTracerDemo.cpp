@@ -24,7 +24,7 @@
 #include <sstream>
 
 float triangle(float x) noexcept {
-    return 2.0f * std::abs(x - std::floor(x + 0.5f));
+    return -1.0f + 4.0f * std::abs(x - 0.25f - std::floor(x + 0.25f));
 }
 
 template<typename T>
@@ -56,11 +56,11 @@ const Affine& noiseTransform() noexcept {
 float noise(Pos location) noexcept {
     auto v = 0.0f;
     const auto& transform = noiseTransform();
-    auto k = 0.1f;
-    auto kk = 0.85f;
-    for (int i = 0; i < 32; ++i) {
+    auto k = 0.02f;
+    auto kk = 0.9f;
+    for (int i = 0; i < 8; ++i) {
         location = transform * location;
-        v += k * triangle(location.x);
+        v += k * (triangle(location.x) + triangle(location.y) + triangle(location.z));
         location.x *= 1.1f;
         location.y *= 1.1f;
         location.z *= 1.1f;
@@ -73,6 +73,70 @@ float smin(float a, float b, float k) noexcept {
     return -std::log2(
         std::exp2(-k * a) + std::exp2(-k * b)
     ) / k;
+}
+
+struct VoronoiLookup {
+    float sqr_distance;
+    float next_sqr_distance;
+    uint32_t hash;
+};
+
+VoronoiLookup voronoi(Pos location, float scatter = 1.0f, Linear transform = Linear::Identity()) noexcept {
+    const auto inv_transform = *transform.inverse();
+    location = inv_transform * location;
+    const auto floored = Pos(
+        std::floor(location.x),
+        std::floor(location.y),
+        std::floor(location.z)
+    );
+    const auto search_origin = floored;
+
+    const int neighbourhood = 4;
+    const int idx_min = -(neighbourhood / 2) + 1;
+    const int idx_max = neighbourhood / 2;
+
+    float closest_sqr_distance = std::numeric_limits<float>::max();
+    float next_closest_sqr_distance = std::numeric_limits<float>::max();
+    uint32_t closest_hash = 0;
+
+    for (int i = idx_min; i <= idx_max; ++i) {
+        for (int j = idx_min; j <= idx_max; ++j) {
+            for (int k = idx_min; k <= idx_max; ++k) {
+                const auto cell_center_grid = search_origin + Vec(static_cast<float>(i), static_cast<float>(j), static_cast<float>(k));
+                uint32_t hash = (
+                    static_cast<int>(cell_center_grid.x) * 885889
+                    + static_cast<int>(cell_center_grid.y) * 745273
+                    + static_cast<int>(cell_center_grid.z) * 1220689
+                );
+                hash |= (hash & 0x0f0f0f0f) << 4;
+                hash *= 31;
+                hash |= (hash & 0x0f0f0f0f) << 4;
+                hash *= 31;
+                hash |= (hash & 0x0f0f0f0f) << 4;
+                hash *= 31;
+                const auto cell_center = Pos(
+                    cell_center_grid.x + scatter * 0.5f * (-1.0 + static_cast<float>(hash & 0x3ff) / 512.0f),
+                    cell_center_grid.y + scatter * 0.5f * (-1.0 + static_cast<float>((hash >> 10) & 0x3ff) / 512.0f),
+                    cell_center_grid.z + scatter * 0.5f * (-1.0 + static_cast<float>((hash >> 20) & 0x3ff) / 512.0f)
+                );
+
+                const float sqr_distance = (transform * (location - cell_center)).normSquared();
+                if (sqr_distance < closest_sqr_distance) {
+                    next_closest_sqr_distance = std::min(closest_sqr_distance, next_closest_sqr_distance);
+                    closest_sqr_distance = sqr_distance;
+                    closest_hash = hash;
+                } else {
+                    next_closest_sqr_distance = std::min(sqr_distance, next_closest_sqr_distance);
+                }
+            }
+        }
+    }
+
+    return VoronoiLookup {
+        closest_sqr_distance,
+        next_closest_sqr_distance,
+        closest_hash
+    };
 }
 
 class RoughSphereObject : public SDFObjectCRTP<RoughSphereObject> {
@@ -157,20 +221,112 @@ public:
 
 
     float signedDistance(const Pos& pos) const noexcept {
-        // return m_geometry.signedDistance(pos) + 0.1f * noise((50.0f * pos.toVec()).toPos());
-        return m_geometry.signedDistance(pos) - 0.01f;
+        const float voronoi_scale = 0.03723f;
+        const auto voronoi_lookup = voronoi((pos.toVec() / voronoi_scale).toPos());
+        return std::max(
+            m_geometry.signedDistance(pos) - 0.3f + 2.0f * noise((1.0f * pos.toVec()).toPos()),
+            (std::sqrt(voronoi_lookup.sqr_distance) - std::sqrt(voronoi_lookup.next_sqr_distance) + 0.1f) * voronoi_scale
+            // (std::sqrt(voronoi_lookup.sqr_distance) - 0.4f) * voronoi_scale
+        );
+        // return m_geometry.signedDistance(pos) - 0.01f;
+    }
+
+    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override {
+        auto m = this->material;
+        const auto n = this->signedDistanceNormal(ray.pos);
+        const float voronoi_scale = 0.2f;
+        const auto voronoi_lookup = voronoi((ray.pos.toVec() / voronoi_scale).toPos());
+        m.setReflectedAbsorption(Color(
+            0.6f + 0.4f * static_cast<float>(voronoi_lookup.hash & 0xff) / 256.0,
+            0.3f + 0.5f * static_cast<float>((voronoi_lookup.hash >> 8) & 0xff) / 256.0,
+            0.1f + 0.4f * static_cast<float>((voronoi_lookup.hash >> 16) & 0xff) / 256.0
+        ));
+        return m.deflect(ray.dir, n);
     }
 
     AxisAlignedBox localBoundingBox() const noexcept {
         return AxisAlignedBox(
             Pos(0.0f, 0.0f, 0.0f),
-            1.1f * m_geometry.halfSize
+            2.0f * m_geometry.halfSize
         );
     }
 
 private:
     Rectangle m_geometry;
 };
+
+
+class WeirdWallObject : public SDFObjectCRTP<WeirdWallObject> {
+public:
+    WeirdWallObject(BasicMaterial mat)
+        : SDFObjectCRTP(mat){
+
+    }
+
+
+    float signedDistance(const Pos& pos) const noexcept {
+        const auto sdf_ground = Rectangle(Vec(10.0f, 0.2f, 10.0f)).signedDistance(pos - Vec(0.0f, 3.0f, 0.0f)) + noise(pos);
+
+        const auto distance_from_origin_in_xy = std::hypot(pos.x, pos.y);
+        const auto angle_in_xy = std::atan2(pos.y, pos.x);
+        const auto sdf_arch_ring_band = std::abs(distance_from_origin_in_xy - 1.5f) - (std::abs(angle_in_xy + 0.5f * 3.141592654f) < 0.18f ? 0.5f : 0.3f);
+        const auto spoke_spacing = 18.0f;
+        const auto scaled_spoke_angle = angle_in_xy * spoke_spacing * 0.5f / 3.141592654f;
+        const auto spoke_angle = (scaled_spoke_angle - std::round(scaled_spoke_angle)) / spoke_spacing;
+        const auto sdf_arch_ring_spokes = std::abs(spoke_angle * distance_from_origin_in_xy) * (2.0f * 3.141592654f) - 0.06f;
+        const auto sdf_arch_ring = std::max(sdf_arch_ring_band, -sdf_arch_ring_spokes);
+        const auto sdf_arch_pillar_columns = std::abs(std::abs(pos.x) - 1.5f) - 0.3f;
+        const auto pillar_slice_spacing = 1.5f;
+        const auto sdf_arch_pillar_slices = std::abs(pos.y * pillar_slice_spacing - std::round(pos.y * pillar_slice_spacing)) / pillar_slice_spacing - 0.06f;
+        const auto sdf_arch_pillars = std::max(sdf_arch_pillar_columns, -sdf_arch_pillar_slices);
+        const auto sdf_arch = std::max(
+            pos.y < 0.0f ? sdf_arch_ring : sdf_arch_pillars,
+            std::abs(pos.z) - 0.3f
+        );
+        const auto sdf_arch_center = pos.y < 0.0f ? distance_from_origin_in_xy : std::abs(pos.x);
+
+        const auto voronoi_lookup_bricks = voronoi(
+            pos + 1.5f * Vec(noise(pos), noise(pos + Vec(10.0f, 10.0f, 10.0f)), 0.0f),
+            0.3f,
+            Linear(1.0f, 0.5f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 1.0f)
+        );
+        const auto sdf_bricks_everywhere = std::max(
+            -std::abs(std::sqrt(voronoi_lookup_bricks.sqr_distance) - std::sqrt(voronoi_lookup_bricks.next_sqr_distance)) + 0.05f,
+            std::abs(pos.z) - 0.2f
+        );
+        const auto sdf_brick_wall = -smin(
+            -std::max(
+                sdf_bricks_everywhere,
+                -sdf_arch_center + 1.85f
+            ),
+            3.0f + pos.y + std::exp(-0.125f * (pos.x * pos.x)),
+            2.0f
+        );
+
+        return smin(std::min(sdf_brick_wall, sdf_arch), sdf_ground, 3.0f) + 0.23f * noise((pos.toVec() * 5.1712f).toPos()) + 0.06f * noise((pos.toVec() * 14.81552f).toPos());
+    }
+
+    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override {
+        auto m = this->material;
+        const auto n = this->signedDistanceNormal(ray.pos);
+        const float voronoi_scale = 0.018347f;
+        const auto voronoi_lookup = voronoi((ray.pos.toVec() / voronoi_scale).toPos());
+        m.setReflectedAbsorption(Color(
+            0.6f + 0.4f * static_cast<float>(voronoi_lookup.hash & 0xff) / 256.0,
+            0.3f + 0.5f * static_cast<float>((voronoi_lookup.hash >> 8) & 0xff) / 256.0,
+            0.1f + 0.4f * static_cast<float>((voronoi_lookup.hash >> 16) & 0xff) / 256.0
+        ));
+        return m.deflect(ray.dir, n);
+    }
+
+    AxisAlignedBox localBoundingBox() const noexcept {
+        return AxisAlignedBox(
+            Pos(0.0f, 0.0f, 0.0f),
+            Vec(20.0f, 20.0f, 20.0f)
+        );
+    }
+};
+
 
 class InfiniteLightSource : public Object {
 public:
@@ -237,6 +393,15 @@ void copyToSFImage(const Image& src, sf::Image& dst) {
 int main() {
 
     auto s = Scene{};
+    {
+        auto m = BasicMaterial{};
+        m.setDiffuseReflection(1.0f);
+        m.setSpecularReflection(0.0f);
+        m.setSpecularSharpness(1.0f);
+        m.setTransmittance(0.0f);
+        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+        m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+        s.addObject<WeirdWallObject>(m);}
 
     // Random spheres
     // {
@@ -269,94 +434,94 @@ int main() {
     // }
 
     // Cornell box
-    {
-        auto matte = BasicMaterial();
-        matte.setDiffuseReflection(1.0f);
-        // matte.setEmittedLuminance(Color(0.1f, 0.1f, 0.1f));
-        matte.setEmittedLuminance(Color(0.0f, 0.0f, 0.0f));
-        matte.setSpecularReflection(0.0f);
-        matte.setTransmittance(0.0f);
+    // {
+    //     auto matte = BasicMaterial();
+    //     matte.setDiffuseReflection(1.0f);
+    //     // matte.setEmittedLuminance(Color(0.1f, 0.1f, 0.1f));
+    //     matte.setEmittedLuminance(Color(0.0f, 0.0f, 0.0f));
+    //     matte.setSpecularReflection(0.0f);
+    //     matte.setTransmittance(0.0f);
 
-        auto matteRed = matte;
-        auto matteGreen = matte;
-        auto matteGray = matte;
-        auto matteWhite = matte;
-        matteRed.setReflectedAbsorption(Color(0.8f, 0.1f, 0.1f));
-        matteGreen.setReflectedAbsorption(Color(0.1f, 0.8f, 0.1f));
-        matteGray.setReflectedAbsorption(Color(0.2f, 0.2f, 0.3f));
-        matteWhite.setReflectedAbsorption(Color(1.0f, 1.0f, 1.0f));
+    //     auto matteRed = matte;
+    //     auto matteGreen = matte;
+    //     auto matteGray = matte;
+    //     auto matteWhite = matte;
+    //     matteRed.setReflectedAbsorption(Color(0.8f, 0.1f, 0.1f));
+    //     matteGreen.setReflectedAbsorption(Color(0.1f, 0.8f, 0.1f));
+    //     matteGray.setReflectedAbsorption(Color(0.2f, 0.2f, 0.3f));
+    //     matteWhite.setReflectedAbsorption(Color(1.0f, 1.0f, 1.0f));
 
-        auto glowing = matte;
-        auto antiGlowing = matte;
-        glowing.setEmittedLuminance(Color(50.0f, 40.0f, 30.0f));
-        antiGlowing.setEmittedLuminance(Color(-25.0f, -20.0f, -15.0f));
+    //     auto glowing = matte;
+    //     auto antiGlowing = matte;
+    //     glowing.setEmittedLuminance(Color(50.0f, 40.0f, 30.0f));
+    //     antiGlowing.setEmittedLuminance(Color(-25.0f, -20.0f, -15.0f));
 
-        auto mirror = matte;
-        mirror.setDiffuseReflection(0.05f);
-        mirror.setSpecularReflection(0.95f);
-        mirror.setSpecularSharpness(0.95f);
-        mirror.setReflectedAbsorption(Color(0.9f, 0.9f, 0.9f));
+    //     auto mirror = matte;
+    //     mirror.setDiffuseReflection(0.05f);
+    //     mirror.setSpecularReflection(0.95f);
+    //     mirror.setSpecularSharpness(0.95f);
+    //     mirror.setReflectedAbsorption(Color(0.9f, 0.9f, 0.9f));
 
-        const auto d = 0.01f;
+    //     const auto d = 0.01f;
 
-        auto& lightSource = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), glowing);
-        lightSource.setTransformation(Affine::Translation(Vec{0.0f, -5.0f + 2.0f * d, 0.0f}));
+    //     auto& lightSource = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), glowing);
+    //     lightSource.setTransformation(Affine::Translation(Vec{0.0f, -5.0f + 2.0f * d, 0.0f}));
 
-        // auto& lightSink = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), antiGlowing);
-        // lightSink.setTransformation(Affine::Translation(Vec{0.0f, 5.0f - 2.0f * d, 0.0f}));
+    //     // auto& lightSink = s.addObject<BoxObject>(Rectangle(Vec{1.0f, d, 1.0f}), antiGlowing);
+    //     // lightSink.setTransformation(Affine::Translation(Vec{0.0f, 5.0f - 2.0f * d, 0.0f}));
 
-        auto& rearWall = s.addObject<BoxObject>(Rectangle(Vec{5.0f, 5.0f, d}), matteWhite);
-        rearWall.setTransformation(Affine::Translation(Vec{0.0f, 0.0f, 5.0f}));
+    //     auto& rearWall = s.addObject<BoxObject>(Rectangle(Vec{5.0f, 5.0f, d}), matteWhite);
+    //     rearWall.setTransformation(Affine::Translation(Vec{0.0f, 0.0f, 5.0f}));
 
-        auto& floor = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
-        floor.setTransformation(Affine::Translation(Vec{0.0f, 5.0f, 0.0f}));
+    //     auto& floor = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
+    //     floor.setTransformation(Affine::Translation(Vec{0.0f, 5.0f, 0.0f}));
 
-        // ceiling
-        auto& ceiling = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
-        ceiling.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
+    //     // ceiling
+    //     auto& ceiling = s.addObject<BoxObject>(Rectangle(Vec{5.0f, d, 5.0f}), matteWhite);
+    //     ceiling.setTransformation(Affine::Translation(Vec{0.0f, -5.0f, 0.0f}));
 
-        // left wall
-        auto& leftWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteRed);
-        leftWall.setTransformation(Affine::Translation(Vec{-5.0f, 0.0f, 0.0f}));
+    //     // left wall
+    //     auto& leftWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteRed);
+    //     leftWall.setTransformation(Affine::Translation(Vec{-5.0f, 0.0f, 0.0f}));
 
-        // right wall
-        auto& rightWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteGreen);
-        rightWall.setTransformation(Affine::Translation(Vec{5.0f, 0.0f, 0.0f}));
+    //     // right wall
+    //     auto& rightWall = s.addObject<BoxObject>(Rectangle(Vec{d, 5.0f, 5.0f}), matteGreen);
+    //     rightWall.setTransformation(Affine::Translation(Vec{5.0f, 0.0f, 0.0f}));
 
-        // front box
-        // auto& box = s.addObject<BoxObject>(Rectangle(Vec{1.5f, 2.0, 1.5f}), matteWhite);
-        // box.setTransformation(Affine::Translation(Vec{-1.5f, 3.0f, 1.0f}) * Linear::RotationY(0.4136f));
-        // box.material.setReflectedAbsorption(Color(0.5f, 0.5f, 1.0f));
+    //     // front box
+    //     // auto& box = s.addObject<BoxObject>(Rectangle(Vec{1.5f, 2.0, 1.5f}), matteWhite);
+    //     // box.setTransformation(Affine::Translation(Vec{-1.5f, 3.0f, 1.0f}) * Linear::RotationY(0.4136f));
+    //     // box.material.setReflectedAbsorption(Color(0.5f, 0.5f, 1.0f));
 
-        auto& whiteSphere1 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
-        whiteSphere1.setTransformation(Affine::Translation(Vec{-3.0f, 3.5f, -2.5f}));
+    //     auto& whiteSphere1 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
+    //     whiteSphere1.setTransformation(Affine::Translation(Vec{-3.0f, 3.5f, -2.5f}));
 
-        auto& whiteSphere2 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
-        whiteSphere2.setTransformation(Affine::Translation(Vec{3.0f, -3.5f, -2.5f}));
+    //     auto& whiteSphere2 = s.addObject<SphereObject>(Sphere(1.5f), matteWhite);
+    //     whiteSphere2.setTransformation(Affine::Translation(Vec{3.0f, -3.5f, -2.5f}));
 
-        auto& mirrorSphere1 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
-        mirrorSphere1.setTransformation(Affine::Translation(Vec{3.0f, 3.5f, 2.5f}));
+    //     auto& mirrorSphere1 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
+    //     mirrorSphere1.setTransformation(Affine::Translation(Vec{3.0f, 3.5f, 2.5f}));
 
-        auto& mirrorSphere2 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
-        mirrorSphere2.setTransformation(Affine::Translation(Vec{-3.0f, -3.5f, 2.5f}));
+    //     auto& mirrorSphere2 = s.addObject<SphereObject>(Sphere(1.5f), mirror);
+    //     mirrorSphere2.setTransformation(Affine::Translation(Vec{-3.0f, -3.5f, 2.5f}));
 
-        // auto& fractal = s.addObject<FractalObject>();
-        // fractal.material = matteGray;
-        // fractal.material.setEmittedLuminance(Color(0.05f, 0.1f, 0.2f));
-        // fractal.material.setReflectedAbsorption(Color(0.2f, 0.4f, 0.8f));
-        // fractal.material.setDiffuseReflection(1.0f);
-        // fractal.material.setSpecularReflection(1.0f);
-        // fractal.setTransformation(
-        //     Affine::Translation(Vec{-1.5f, -1.0f, 1.0f})
-        //     // * Linear::RotationY(0.6f)
-        //     // * Linear::RotationX(0.3f)
-        //     // * Linear::Scale(1.5f)
-        // );
-    }
+    //     // auto& fractal = s.addObject<FractalObject>();
+    //     // fractal.material = matteGray;
+    //     // fractal.material.setEmittedLuminance(Color(0.05f, 0.1f, 0.2f));
+    //     // fractal.material.setReflectedAbsorption(Color(0.2f, 0.4f, 0.8f));
+    //     // fractal.material.setDiffuseReflection(1.0f);
+    //     // fractal.material.setSpecularReflection(1.0f);
+    //     // fractal.setTransformation(
+    //     //     Affine::Translation(Vec{-1.5f, -1.0f, 1.0f})
+    //     //     // * Linear::RotationY(0.6f)
+    //     //     // * Linear::RotationX(0.3f)
+    //     //     // * Linear::Scale(1.5f)
+    //     // );
+    // }
 
     // Globe of cubes (or glob of spheres)
     // {
-    //     const auto res = std::size_t{16};
+    //     const auto res = std::size_t{5};
     //     const auto size = 3.0f;
     //     const auto dsize = size / static_cast<float>(res);
     //     const auto mapToSpace = [&](std::size_t idx) {
@@ -390,11 +555,12 @@ int main() {
 
     //                 auto m = BasicMaterial{};
     //                 if (dist(randomEngine()) < 0.9f) {
-    //                     m.setDiffuseReflection(0.05f);// * dist(randomEngine()));
-    //                     m.setSpecularReflection(0.95f);//1.0f * dist(randomEngine()));
-    //                     m.setSpecularSharpness(0.9f);//1.0f * dist(randomEngine()));
+    //                     m.setDiffuseReflection(1.0f * dist(randomEngine()));
+    //                     m.setSpecularReflection(0.3f * dist(randomEngine()));
+    //                     m.setSpecularSharpness(1.0f * dist(randomEngine()));
     //                     m.setTransmittance(0.0f);
-    //                     m.setReflectedAbsorption(Color{1.0f, 0.9f, 0.2f});
+    //                     // m.setReflectedAbsorption(Color{1.0f, 0.9f, 0.2f});
+    //                     m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
     //                     m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
     //                 } else {
     //                     m.setDiffuseReflection(0.9f);
@@ -454,18 +620,18 @@ int main() {
     //     // auto& b = s.addObject<BoxObject>(g, m);
     // }
 
-    // // light source
-    // {
-    //     auto m = BasicMaterial{};
-    //     m.setDiffuseReflection(1.0f);
-    //     m.setSpecularReflection(0.0f);
-    //     m.setTransmittance(0.0f);
-    //     m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
-    //     m.setEmittedLuminance(Color{1.0f, 1.0f, 1.0f});
+    // light source
+    {
+        auto m = BasicMaterial{};
+        m.setDiffuseReflection(1.0f);
+        m.setSpecularReflection(0.0f);
+        m.setTransmittance(0.0f);
+        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+        m.setEmittedLuminance(2.0f * Color{1.0f, 1.0f, 1.0f});
 
-    //     auto& b = s.addObject<BoxObject>(Rectangle(Vec(100.0f, 0.1f, 100.0f)), m);
-    //     b.setTransformation(Affine::Translation(Vec{0.0f, -50.0f, 0.0f}));
-    // }
+        auto& b = s.addObject<BoxObject>(Rectangle(Vec(100.0f, 0.1f, 100.0f)), m);
+        b.setTransformation(Affine::Translation(Vec{0.0f, -50.0f, 0.0f}));
+    }
 
     // Fractal
     /*{
@@ -693,7 +859,7 @@ int main() {
                     auto& t = camera.transform();
                     if (event.key.control) {
                         camera.setFocalDistance(
-                            camera.focalDistance() + 0.25f * delta.z
+                            camera.focalDistance() + 5.0f * delta.z
                         );
                     } else if (event.key.shift) {
                         const auto k = 3.141592654f * 0.025f;

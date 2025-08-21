@@ -1,4 +1,5 @@
 build/
+buildrelease/
 .vs/
 .vscode/
 output/

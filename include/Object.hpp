@@ -123,10 +123,11 @@ protected:
         const auto dy = Vec{0.0f, delta, 0.0f};
         const auto dz = Vec{0.0f, 0.0f, delta};
         const auto self = static_cast<const Derived*>(this);
+        const auto distance = self->signedDistance(pos);
         return (Vec{
-            self->signedDistance(pos + dx) - self->signedDistance(pos - dx),
-            self->signedDistance(pos + dy) - self->signedDistance(pos - dy),
-            self->signedDistance(pos + dz) - self->signedDistance(pos - dz)
+            self->signedDistance(pos + dx) - distance,
+            self->signedDistance(pos + dy) - distance,
+            self->signedDistance(pos + dz) - distance
         } / delta).unit();
     }
 
