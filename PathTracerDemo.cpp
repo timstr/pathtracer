@@ -75,29 +75,17 @@ float smin(float a, float b, float k) noexcept {
     ) / k;
 }
 
-struct VoronoiLookup {
-    float sqr_distance;
-    float next_sqr_distance;
-    uint32_t hash;
-};
-
-VoronoiLookup voronoi(Pos location, float scatter = 1.0f, Linear transform = Linear::Identity()) noexcept {
-    const auto inv_transform = *transform.inverse();
-    location = inv_transform * location;
-    const auto floored = Pos(
+// F: (Pos point, uint32_t point_hash) -> void
+template<typename F>
+void for_each_nearby_scattered_point(Pos location, float scatter, int radius, F f) {
+    const auto search_origin = Pos(
         std::floor(location.x),
         std::floor(location.y),
         std::floor(location.z)
     );
-    const auto search_origin = floored;
 
-    const int neighbourhood = 4;
-    const int idx_min = -(neighbourhood / 2) + 1;
-    const int idx_max = neighbourhood / 2;
-
-    float closest_sqr_distance = std::numeric_limits<float>::max();
-    float next_closest_sqr_distance = std::numeric_limits<float>::max();
-    uint32_t closest_hash = 0;
+    const int idx_min = -radius + 1;
+    const int idx_max = radius;
 
     for (int i = idx_min; i <= idx_max; ++i) {
         for (int j = idx_min; j <= idx_max; ++j) {
@@ -119,18 +107,42 @@ VoronoiLookup voronoi(Pos location, float scatter = 1.0f, Linear transform = Lin
                     cell_center_grid.y + scatter * 0.5f * (-1.0 + static_cast<float>((hash >> 10) & 0x3ff) / 512.0f),
                     cell_center_grid.z + scatter * 0.5f * (-1.0 + static_cast<float>((hash >> 20) & 0x3ff) / 512.0f)
                 );
-
-                const float sqr_distance = (transform * (location - cell_center)).normSquared();
-                if (sqr_distance < closest_sqr_distance) {
-                    next_closest_sqr_distance = std::min(closest_sqr_distance, next_closest_sqr_distance);
-                    closest_sqr_distance = sqr_distance;
-                    closest_hash = hash;
-                } else {
-                    next_closest_sqr_distance = std::min(sqr_distance, next_closest_sqr_distance);
-                }
+                f(cell_center, hash);
             }
         }
     }
+}
+
+struct VoronoiLookup {
+    float sqr_distance;
+    float next_sqr_distance;
+    uint32_t hash;
+};
+
+VoronoiLookup voronoi(Pos location, float scatter = 1.0f, Linear transform = Linear::Identity()) noexcept {
+    const auto inv_transform = *transform.inverse();
+
+    location = inv_transform * location;
+
+    float closest_sqr_distance = std::numeric_limits<float>::max();
+    float next_closest_sqr_distance = std::numeric_limits<float>::max();
+    uint32_t closest_hash = 0;
+
+    for_each_nearby_scattered_point(
+        location,
+        scatter,
+        /* radius = */ 2,
+        [&](Pos cell_center, uint32_t hash) {
+            const float sqr_distance = (transform * (location - cell_center)).normSquared();
+            if (sqr_distance < closest_sqr_distance) {
+                next_closest_sqr_distance = std::min(closest_sqr_distance, next_closest_sqr_distance);
+                closest_sqr_distance = sqr_distance;
+                closest_hash = hash;
+            } else {
+                next_closest_sqr_distance = std::min(sqr_distance, next_closest_sqr_distance);
+            }
+        }
+    );
 
     return VoronoiLookup {
         closest_sqr_distance,
@@ -328,6 +340,51 @@ public:
 };
 
 
+class CraterBallObject : public SDFObjectCRTP<CraterBallObject> {
+public:
+    CraterBallObject(BasicMaterial mat)
+        : SDFObjectCRTP(mat){
+
+    }
+
+
+    float signedDistance(const Pos& pos) const noexcept {
+        const auto sdf_sphere = pos.toVec().norm() - 0.5f;
+
+        const auto crater_point_lookup_scale = 20.0f;
+
+        const auto crater_query = (pos.toVec().unit() * crater_point_lookup_scale).toPos();
+
+        auto crater = 0.0f;
+        for_each_nearby_scattered_point(
+            crater_query,
+            /* scatter = */ 1.0f,
+            /*radius = */ 2,
+            [&](Pos point, uint32_t hash) {
+                const auto crater_size = 0.01f + 0.05f * std::exp(5.0f * static_cast<float>(hash & 0xff) / 256.0f);
+                const auto point_on_sphere = (point.toVec().unit() * crater_point_lookup_scale).toPos();
+                crater += -0.03f * (-0.5f + 0.5f * std::tanh(50.0f * ((crater_query - point).norm() - crater_size)));
+            }
+        );
+
+        return sdf_sphere + crater;
+    }
+
+    ColorBounce deflectLocalRay(const Ray& ray) const noexcept override {
+        auto m = this->material;
+        const auto n = this->signedDistanceNormal(ray.pos);
+        return m.deflect(ray.dir, n);
+    }
+
+    AxisAlignedBox localBoundingBox() const noexcept {
+        return AxisAlignedBox(
+            Pos(0.0f, 0.0f, 0.0f),
+            Vec(1.0f, 1.0f, 1.0f)
+        );
+    }
+};
+
+
 class InfiniteLightSource : public Object {
 public:
     Color color;
@@ -394,14 +451,27 @@ int main() {
 
     auto s = Scene{};
     {
-        auto m = BasicMaterial{};
-        m.setDiffuseReflection(1.0f);
-        m.setSpecularReflection(0.0f);
-        m.setSpecularSharpness(1.0f);
-        m.setTransmittance(0.0f);
-        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
-        m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
-        s.addObject<WeirdWallObject>(m);}
+        // {
+        //     auto m = BasicMaterial{};
+        //     m.setDiffuseReflection(1.0f);
+        //     m.setSpecularReflection(0.0f);
+        //     m.setSpecularSharpness(1.0f);
+        //     m.setTransmittance(0.0f);
+        //     m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+        //     m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+        //     s.addObject<WeirdWallObject>(m);
+        // }
+
+        {
+            auto m = BasicMaterial{};
+            m.setDiffuseReflection(1.0f);
+            m.setSpecularReflection(0.0f);
+            m.setTransmittance(0.0f);
+            m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+            m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+            s.addObject<CraterBallObject>(m);
+        }
+    }
 
     // Random spheres
     // {
