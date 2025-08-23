@@ -102,6 +102,8 @@ void for_each_nearby_scattered_point(Pos location, float scatter, int radius, F 
                 hash *= 31;
                 hash |= (hash & 0x0f0f0f0f) << 4;
                 hash *= 31;
+                hash |= (hash & 0x0f0f0f0f) << 4;
+                hash *= 31;
                 const auto cell_center = Pos(
                     cell_center_grid.x + scatter * 0.5f * (-1.0 + static_cast<float>(hash & 0x3ff) / 512.0f),
                     cell_center_grid.y + scatter * 0.5f * (-1.0 + static_cast<float>((hash >> 10) & 0x3ff) / 512.0f),
@@ -277,7 +279,14 @@ public:
 
 
     float signedDistance(const Pos& pos) const noexcept {
-        const auto sdf_ground = Rectangle(Vec(10.0f, 0.2f, 10.0f)).signedDistance(pos - Vec(0.0f, 3.0f, 0.0f)) + noise(pos);
+        const auto sdf_ground_clean = Rectangle(Vec(10.0f, 0.2f, 10.0f)).signedDistance(pos - Vec(0.0f, 3.0f, 0.0f));
+        const auto sdf_wall_proxy = Rectangle(Vec(10.0f, 4.0f, 0.4f)).signedDistance(pos);
+        const auto sdf_proxy = smin(sdf_ground_clean - 0.2f, sdf_wall_proxy, 2.0f);
+        if (sdf_proxy > 0.1f) {
+            return sdf_proxy;
+        }
+
+        const auto sdf_ground = sdf_ground_clean + noise(pos);
 
         const auto distance_from_origin_in_xy = std::hypot(pos.x, pos.y);
         const auto angle_in_xy = std::atan2(pos.y, pos.x);
@@ -351,23 +360,68 @@ public:
     float signedDistance(const Pos& pos) const noexcept {
         const auto sdf_sphere = pos.toVec().norm() - 0.5f;
 
-        const auto crater_point_lookup_scale = 20.0f;
+        if (sdf_sphere > 0.1) {
+            return sdf_sphere;
+        }
 
-        const auto crater_query = (pos.toVec().unit() * crater_point_lookup_scale).toPos();
 
         auto crater = 0.0f;
-        for_each_nearby_scattered_point(
-            crater_query,
-            /* scatter = */ 1.0f,
-            /*radius = */ 2,
-            [&](Pos point, uint32_t hash) {
-                const auto crater_size = 0.01f + 0.05f * std::exp(5.0f * static_cast<float>(hash & 0xff) / 256.0f);
-                const auto point_on_sphere = (point.toVec().unit() * crater_point_lookup_scale).toPos();
-                crater += -0.03f * (-0.5f + 0.5f * std::tanh(50.0f * ((crater_query - point).norm() - crater_size)));
-            }
-        );
+        auto fallout = 0.0f;
 
-        return sdf_sphere + crater;
+        // Small craters
+        {
+            const auto crater_point_lookup_scale = 10.0f;
+            const auto crater_query = (-pos.toVec().unit() * crater_point_lookup_scale).toPos();
+            for_each_nearby_scattered_point(
+                crater_query,
+                /* scatter = */ 1.0f,
+                /*radius = */ 1,
+                [&](Pos point, uint32_t hash) {
+                    const auto t = static_cast<float>(hash & 0xffff) / static_cast<float>(0xffff);
+                    const auto crater_size = 0.05f + 0.35f * t * t;
+                    const auto point_on_sphere = (point.toVec().unit() * crater_point_lookup_scale).toPos();
+                    if ((point_on_sphere - point).normSquared() < 0.1f) {
+                        crater = std::max(
+                            -0.005f * (-0.5f + 0.5f * std::tanh(50.0f * ((crater_query - point_on_sphere).norm() - crater_size))),
+                            crater
+                        );
+                    }
+                }
+            );
+        }
+
+        // big craters
+        {
+            const auto crater_point_lookup_scale = 2.5f;
+            const auto crater_query = (-pos.toVec().unit() * crater_point_lookup_scale).toPos();
+            for_each_nearby_scattered_point(
+                crater_query,
+                /* scatter = */ 0.5f,
+                /*radius = */ 2,
+                [&](Pos point, uint32_t hash) {
+                    const auto t = static_cast<float>(hash & 0xffff) / static_cast<float>(0xffff);
+                    const auto crater_size = 0.05f + 0.45f * t * t;
+                    const auto point_on_sphere = (point.toVec().unit() * crater_point_lookup_scale).toPos();
+                    const auto distance_to_crater_center = (crater_query - point_on_sphere).norm();
+                    if ((point_on_sphere - point).normSquared() < 0.1f) {
+                        crater = std::max(
+                            -0.02f * (std::min(0.0f, std::tanh(20.0f * (distance_to_crater_center - crater_size)))),
+                            crater
+                        );
+                        if (distance_to_crater_center >= crater_size) {
+                            const auto linear_falloff = std::max(0.0f, 1.2f - distance_to_crater_center / (crater_size * 5.0f));
+                            const auto falloff = std::pow(
+                                linear_falloff,
+                                2.0f + 3.0f * noise(point_on_sphere + 3.0f * crater_size * (crater_query - point_on_sphere).unit())
+                            );
+                            fallout += 0.03f * falloff * noise(point_on_sphere + 40.0f * crater_size * (crater_query - point_on_sphere).unit());
+                        }
+                    }
+                }
+            );
+        }
+
+        return sdf_sphere + crater + fallout + 0.01f * noise((pos.toVec() * 20.0f).toPos()) + 0.4f * noise((pos.toVec() * 1.5f).toPos());
     }
 
     ColorBounce deflectLocalRay(const Ray& ray) const noexcept override {
