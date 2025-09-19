@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <climits>
+#include <cstdint>
 #include <fstream>
 
 Image::Image(std::size_t width, std::size_t height)

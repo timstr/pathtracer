@@ -279,8 +279,8 @@ public:
 
 
     float signedDistance(const Pos& pos) const noexcept {
-        const auto sdf_ground_clean = Rectangle(Vec(10.0f, 0.2f, 10.0f)).signedDistance(pos - Vec(0.0f, 3.0f, 0.0f));
-        const auto sdf_wall_proxy = Rectangle(Vec(10.0f, 4.0f, 0.4f)).signedDistance(pos);
+        const auto sdf_ground_clean = Rectangle(Vec(50.0f, 0.2f, 10.0f)).signedDistance(pos - Vec(0.0f, 3.0f, 0.0f));
+        const auto sdf_wall_proxy = Rectangle(Vec(50.0f, 4.0f, 0.4f)).signedDistance(pos);
         const auto sdf_proxy = smin(sdf_ground_clean - 0.2f, sdf_wall_proxy, 2.0f);
         if (sdf_proxy > 0.1f) {
             return sdf_proxy;
@@ -343,7 +343,7 @@ public:
     AxisAlignedBox localBoundingBox() const noexcept {
         return AxisAlignedBox(
             Pos(0.0f, 0.0f, 0.0f),
-            Vec(20.0f, 20.0f, 20.0f)
+            Vec(50.0f, 20.0f, 20.0f)
         );
     }
 };
@@ -351,8 +351,9 @@ public:
 
 class CraterBallObject : public SDFObjectCRTP<CraterBallObject> {
 public:
-    CraterBallObject(BasicMaterial mat)
-        : SDFObjectCRTP(mat){
+    CraterBallObject(BasicMaterial mat, Vec offset)
+        : SDFObjectCRTP(mat)
+        , m_offset(offset) {
 
     }
 
@@ -366,62 +367,102 @@ public:
 
 
         auto crater = 0.0f;
+        auto tiny_crater = 0.0f;
         auto fallout = 0.0f;
-
-        // Small craters
-        {
-            const auto crater_point_lookup_scale = 10.0f;
-            const auto crater_query = (-pos.toVec().unit() * crater_point_lookup_scale).toPos();
-            for_each_nearby_scattered_point(
-                crater_query,
-                /* scatter = */ 1.0f,
-                /*radius = */ 1,
-                [&](Pos point, uint32_t hash) {
-                    const auto t = static_cast<float>(hash & 0xffff) / static_cast<float>(0xffff);
-                    const auto crater_size = 0.05f + 0.35f * t * t;
-                    const auto point_on_sphere = (point.toVec().unit() * crater_point_lookup_scale).toPos();
-                    if ((point_on_sphere - point).normSquared() < 0.1f) {
-                        crater = std::max(
-                            -0.005f * (-0.5f + 0.5f * std::tanh(50.0f * ((crater_query - point_on_sphere).norm() - crater_size))),
-                            crater
-                        );
-                    }
-                }
-            );
-        }
+        auto min_age = 1.0f;
 
         // big craters
         {
-            const auto crater_point_lookup_scale = 2.5f;
-            const auto crater_query = (-pos.toVec().unit() * crater_point_lookup_scale).toPos();
+            const auto crater_point_lookup_scale = 2.0f;
+            const auto crater_query = m_offset + (-pos.toVec().unit() * crater_point_lookup_scale).toPos();
             for_each_nearby_scattered_point(
                 crater_query,
-                /* scatter = */ 0.5f,
+                /* scatter = */ 0.6f,
                 /*radius = */ 2,
                 [&](Pos point, uint32_t hash) {
                     const auto t = static_cast<float>(hash & 0xffff) / static_cast<float>(0xffff);
-                    const auto crater_size = 0.05f + 0.45f * t * t;
-                    const auto point_on_sphere = (point.toVec().unit() * crater_point_lookup_scale).toPos();
+                    const auto age = static_cast<float>((hash >> 16) & 0xffff) / static_cast<float>(0xffff);
+                    const auto crater_size = 0.05f + 0.4f * t * t;
+                    const auto point_on_sphere = m_offset + ((point - m_offset).toVec().unit() * crater_point_lookup_scale).toPos();
                     const auto distance_to_crater_center = (crater_query - point_on_sphere).norm();
                     if ((point_on_sphere - point).normSquared() < 0.1f) {
-                        crater = std::max(
-                            -0.02f * (std::min(0.0f, std::tanh(20.0f * (distance_to_crater_center - crater_size)))),
-                            crater
-                        );
+                        const auto c = 20.0f * (distance_to_crater_center - crater_size);
+                        auto crater_depth = std::tanh(c);
+                        if (c > 1e-3f) {
+                            crater_depth = 0.9f * t * crater_depth / (0.02f / c + c * c);
+                        }
+
+                        crater -= 0.02f * crater_depth;
                         if (distance_to_crater_center >= crater_size) {
                             const auto linear_falloff = std::max(0.0f, 1.2f - distance_to_crater_center / (crater_size * 5.0f));
                             const auto falloff = std::pow(
                                 linear_falloff,
                                 2.0f + 3.0f * noise(point_on_sphere + 3.0f * crater_size * (crater_query - point_on_sphere).unit())
                             );
-                            fallout += 0.03f * falloff * noise(point_on_sphere + 40.0f * crater_size * (crater_query - point_on_sphere).unit());
+                            fallout += 0.1f * falloff * (0.2f + 0.4f * crater_depth) * noise(point_on_sphere + 40.0f * crater_size * (crater_query - point_on_sphere).unit());
+                        } else {
+                            min_age = std::min(age, min_age);
                         }
                     }
                 }
             );
         }
 
-        return sdf_sphere + crater + fallout + 0.01f * noise((pos.toVec() * 20.0f).toPos()) + 0.4f * noise((pos.toVec() * 1.5f).toPos());
+        // Small craters
+        {
+            const auto crater_point_lookup_scale = 10.0f;
+            const auto crater_query = m_offset + (-pos.toVec().unit() * crater_point_lookup_scale).toPos();
+            for_each_nearby_scattered_point(
+                crater_query,
+                /* scatter = */ 1.0f,
+                /*radius = */ 1,
+                [&](Pos point, uint32_t hash) {
+                    const auto t = static_cast<float>(hash & 0xffff) / static_cast<float>(0xffff);
+                    const auto age = static_cast<float>((hash >> 16) & 0xffff) / static_cast<float>(0xffff);
+                    if (age > min_age) {
+                        return;
+                    }
+                    const auto crater_size = 0.05f + 0.35f * t * t;
+                    const auto point_on_sphere = m_offset + ((point - m_offset).toVec().unit() * crater_point_lookup_scale).toPos();
+                    if ((point_on_sphere - point).normSquared() < 0.1f) {
+                        const auto distance_to_crater_center = (crater_query - point_on_sphere).norm();
+                        const auto c = 50.0f * (distance_to_crater_center - crater_size);
+                        if (c < 0.0f) {
+                            min_age = std::min(age, min_age);
+                            crater = std::max(-0.005f * std::tanh(c), crater);
+                        }
+                    }
+                }
+            );
+        }
+
+        // Tiny craters
+        {
+            const auto crater_point_lookup_scale = 60.0f;
+            const auto crater_query = m_offset + (-pos.toVec().unit() * crater_point_lookup_scale).toPos();
+            for_each_nearby_scattered_point(
+                crater_query,
+                /* scatter = */ 1.0f,
+                /*radius = */ 1,
+                [&](Pos point, uint32_t hash) {
+                    const auto t = static_cast<float>(hash & 0xffff) / static_cast<float>(0xffff);
+                    const auto age = static_cast<float>((hash >> 16) & 0xffff) / static_cast<float>(0xffff);
+                    const auto crater_size = 0.02f + 0.35f * t;
+                    const auto point_on_sphere = m_offset + ((point - m_offset).toVec().unit() * crater_point_lookup_scale).toPos();
+                    if ((point_on_sphere - point).normSquared() < 0.1f) {
+                        if (age > min_age) {
+                            return;
+                        }
+                        tiny_crater = std::max(
+                            -0.004f * crater_size * (-0.5f + 0.5f * std::tanh(50.0f * ((crater_query - point_on_sphere).norm() - crater_size))),
+                            tiny_crater
+                        );
+                    }
+                }
+            );
+        }
+
+        return sdf_sphere + crater + tiny_crater + fallout + 0.01f * noise(((pos + m_offset).toVec() * 20.0f).toPos()) + 0.4f * noise(((pos + m_offset).toVec() * 1.5f).toPos());
     }
 
     ColorBounce deflectLocalRay(const Ray& ray) const noexcept override {
@@ -436,6 +477,9 @@ public:
             Vec(1.0f, 1.0f, 1.0f)
         );
     }
+
+private:
+    Vec m_offset;
 };
 
 
@@ -505,6 +549,7 @@ int main() {
 
     auto s = Scene{};
     {
+        // weird wall
         // {
         //     auto m = BasicMaterial{};
         //     m.setDiffuseReflection(1.0f);
@@ -516,15 +561,47 @@ int main() {
         //     s.addObject<WeirdWallObject>(m);
         // }
 
+        // crater ball
+        {
+            auto m = BasicMaterial{};
+            m.setDiffuseReflection(1.0f);
+            m.setSpecularReflection(0.0f);
+            m.setTransmittance(0.0f);
+            m.setReflectedAbsorption(Color{0.5f, 0.5f, 0.5f});
+            // m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+            m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
+            // auto& b = s.addObject<CraterBallObject>(m, Vec(0.0f, 10.0f, 0.0f));
+            auto& b = s.addObject<CraterBallObject>(m, Vec(-8.0f, 15.0f, -6.5f));
+            // auto& b = s.addObject<CraterBallObject>(m, Vec(0.0f, 0.0f, 0.0f));
+            b.setTransformation(Affine::Translation(Vec{0.0f, 0.5f, -2.0f}));
+        }
+
+        // light source
         {
             auto m = BasicMaterial{};
             m.setDiffuseReflection(1.0f);
             m.setSpecularReflection(0.0f);
             m.setTransmittance(0.0f);
             m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
-            m.setEmittedLuminance(Color{0.0f, 0.0f, 0.0f});
-            s.addObject<CraterBallObject>(m);
+            m.setEmittedLuminance(2.0f * Color{1.0f, 1.0f, 1.0f});
+
+            auto& b = s.addObject<BoxObject>(Rectangle(Vec(100.0f, 0.1f, 100.0f)), m);
+            b.setTransformation(Affine::Translation(Vec{0.0f, -50.0f, 0.0f}));
         }
+
+        // light sink
+        // {
+        //     auto m = BasicMaterial{};
+        //     m.setDiffuseReflection(0.0f);
+        //     m.setSpecularReflection(1.0f);
+        //     m.setTransmittance(0.0f);
+        //     const auto sink_factor = 25.0f;
+        //     m.setReflectedAbsorption((sink_factor + 1.0f) * Color{0.7f, 0.0f, 0.0f});
+        //     m.setEmittedLuminance(-sink_factor * Color{1.0f, 1.0f, 1.0f});
+
+        //     auto& b = s.addObject<SphereObject>(Sphere(0.6f), m);
+        //     b.setTransformation(Affine::Translation(Vec{0.0f, 0.0f, 1.0f}));
+        // }
     }
 
     // Random spheres
@@ -745,17 +822,17 @@ int main() {
     // }
 
     // light source
-    {
-        auto m = BasicMaterial{};
-        m.setDiffuseReflection(1.0f);
-        m.setSpecularReflection(0.0f);
-        m.setTransmittance(0.0f);
-        m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
-        m.setEmittedLuminance(2.0f * Color{1.0f, 1.0f, 1.0f});
+    // {
+    //     auto m = BasicMaterial{};
+    //     m.setDiffuseReflection(1.0f);
+    //     m.setSpecularReflection(0.0f);
+    //     m.setTransmittance(0.0f);
+    //     m.setReflectedAbsorption(Color{1.0f, 1.0f, 1.0f});
+    //     m.setEmittedLuminance(2.0f * Color{1.0f, 1.0f, 1.0f});
 
-        auto& b = s.addObject<BoxObject>(Rectangle(Vec(100.0f, 0.1f, 100.0f)), m);
-        b.setTransformation(Affine::Translation(Vec{0.0f, -50.0f, 0.0f}));
-    }
+    //     auto& b = s.addObject<BoxObject>(Rectangle(Vec(100.0f, 0.1f, 100.0f)), m);
+    //     b.setTransformation(Affine::Translation(Vec{0.0f, -50.0f, 0.0f}));
+    // }
 
     // Fractal
     /*{
